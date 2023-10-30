@@ -12,11 +12,11 @@ using namespace Eigen;
 //          Anderson Acceleration for Geometry Optimization and Physics Simulation
 
 
-class Simulation
+class DiffSimulation
 {
 public:
-    Simulation(){}
-    ~Simulation(){}
+    DiffSimulation(){}
+    ~DiffSimulation(){}
 public:
 #if 0
 typedef float scalar;
@@ -99,7 +99,7 @@ typedef MatrixXd MatrixXs;
     void global_step();
     void Anderson();
     void Opt();
-    void print_balance_info();
+    bool print_balance_info();
     void get_energy(VectorXs &pos, scalar &energy);
     void compute_jacobi();
     
@@ -140,15 +140,16 @@ typedef MatrixXd MatrixXs;
 
 PYBIND11_MODULE(pd_cpp, m) {
   
-  py::class_<Simulation>(m,"Simulation")
+  py::class_<DiffSimulation>(m,"DiffSimulation")
   .def(py::init<>())
-  .def_readwrite("v",&Simulation::v)
-  .def_readwrite("jacobi",&Simulation::jacobi)
-  .def("set_info",&Simulation::set_info)
-  .def("set_vertices",&Simulation::set_vertices)
-  .def("set_forces",&Simulation::set_forces)
-  .def("calc_edgelist",&Simulation::calc_edgelist)
-  .def("predecomposition",&Simulation::predecomposition)
-  .def("Opt",&Simulation::Opt)
-  .def("compute_jacobi",&Simulation::compute_jacobi);
+  .def_readwrite("v",&DiffSimulation::v)
+  .def_readwrite("jacobi",&DiffSimulation::jacobi)
+  .def("set_info",&DiffSimulation::set_info)
+  .def("set_vertices",&DiffSimulation::set_vertices)
+  .def("set_forces",&DiffSimulation::set_forces)
+  .def("calc_edgelist",&DiffSimulation::calc_edgelist)
+  .def("predecomposition",&DiffSimulation::predecomposition)
+  .def("Opt",&DiffSimulation::Opt)
+  .def("print_balance_info",&DiffSimulation::print_balance_info)
+  .def("compute_jacobi",&DiffSimulation::compute_jacobi);
 }

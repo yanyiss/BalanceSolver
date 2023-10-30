@@ -1,6 +1,6 @@
 #include "pd.h"
 #include <set>
-void Simulation::calc_edgelist()
+void DiffSimulation::calc_edgelist()
 {
     std::set<std::pair<int,int>> edgelist;
     for(int i=0;i<t.rows();++i)
@@ -37,7 +37,7 @@ void Simulation::calc_edgelist()
     //std::cout<<"edge num: "<<e.rows()<<std::endl;
 }
 
-void Simulation::predecomposition()
+void DiffSimulation::predecomposition()
 {
     int n=v.size();
     vtp tri;
@@ -93,7 +93,7 @@ void Simulation::predecomposition()
     J.setFromTriplets(tri.begin(),tri.end());
 }
 
-void Simulation::local_step(VectorXs &pos)
+void DiffSimulation::local_step(VectorXs &pos)
 {
     for(int i=0;i<e.rows();++i)
     {
@@ -113,13 +113,13 @@ void Simulation::local_step(VectorXs &pos)
     }
 }
 
-void Simulation::global_step()
+void DiffSimulation::global_step()
 {
     v_list.push_back(std::move(v_new));
     v_new=solver.solve(m*y+h*h*(J*d+f));
 }
 
-void Simulation::Anderson()
+void DiffSimulation::Anderson()
 {
     if(v_list.size()>max_num)
         v_list.pop_front();
@@ -163,7 +163,7 @@ void Simulation::Anderson()
     }
 }
 
-void Simulation::Opt()
+void DiffSimulation::Opt()
 {
     for(int i=0;i<max_num;++i)
     {
@@ -174,9 +174,9 @@ void Simulation::Opt()
         //std::cout<<"energy: "<<energy<<std::endl;
     }
     get_energy(v_new,energy);
-    Anderson();
     for(int i=0;i<10;++i)
     {
+        Anderson();
         local_step(v_aa);
         scalar aa_energy;
         get_energy(v_aa,aa_energy);
@@ -192,7 +192,7 @@ void Simulation::Opt()
         }
         
         global_step();
-        Anderson();
+        //Anderson();
         //std::cout<<i<<" "<<(v_new-v_list.back()).norm()<<std::endl;
         //std::cout<<"energy: "<<energy<<std::endl;
     }
@@ -207,13 +207,13 @@ void Simulation::Opt()
             v_new(i*3+j)+=trans(j);
         }
     }
-    print_balance_info();
+    //bool balance=print_balance_info();
     
     y=v_new+(v_new-v)*0.9;
     v=v_new;
 }
 
-void Simulation::print_balance_info()
+bool DiffSimulation::print_balance_info()
 {
     MatrixX3s balance;
     balance.resize(f.size()/3,3);
@@ -235,19 +235,26 @@ void Simulation::print_balance_info()
         balance.row(e(i,0))-=vij;
         balance.row(e(i,1))+=vij;
     }
-    std::cout<<"balance info:\n";
+    scalar meanNorm=balance.rowwise().norm().sum()/balance.rows();
+    std::cout<<"\nBalance Info:\n";
+    std::cout<<"Mean Norm: "<<meanNorm<<std::endl;
+    if(meanNorm<9.8*m)
+        return true;
+    else
+        return false;
+    /* std::cout<<"balance info:\n";
     std::cout<<"resultant force: "<<f.sum()<<std::endl;
     std::cout<<"Frobenius Norm: "<<balance.norm()<<std::endl;
     VectorXs norm=balance.rowwise().norm();
     std::cout<<"Mean Norm: "<<norm.sum()/norm.size()<<std::endl;
-    std::cout<<"Max Norm: "<<norm.maxCoeff();
+    std::cout<<"Max Norm: "<<norm.maxCoeff(); */
     /* for(int i=0;i<norm.size();++i)
     {
         std::cout<<i<<" "<<norm(i)<<std::endl;
     } */
 }
 
-void Simulation::get_energy(VectorXs &pos,scalar &energy)
+void DiffSimulation::get_energy(VectorXs &pos,scalar &energy)
 {
     energy= 0.5*pos.transpose()*(Mt2L*pos);
     scalar e_temp=pos.transpose()*(J*d+f);
@@ -257,7 +264,7 @@ void Simulation::get_energy(VectorXs &pos,scalar &energy)
     energy+=0.5*s*h*h*d.squaredNorm();
 }
 
-void Simulation::compute_jacobi()
+void DiffSimulation::compute_jacobi()
 {
     vtp tri;
     tri.reserve(e.rows()*36+3);

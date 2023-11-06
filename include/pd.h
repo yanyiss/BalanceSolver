@@ -7,7 +7,7 @@
 using namespace std;
 namespace py=pybind11;
 using namespace Eigen;
-
+#define GravityAcceleration 9.8
 //reference https://zhuanlan.zhihu.com/p/441301638
 //          Anderson Acceleration for Geometry Optimization and Physics Simulation
 
@@ -67,8 +67,23 @@ typedef MatrixXd MatrixXs;
         f.setZero();
         for(int i=0;i<v.size()/3;++i)
         {
-            f(i*3+2)=-m*9.8;
+            f(i*3+2)=-m*GravityAcceleration;
         }
+#if 0
+        Vector3s sum_force(0.0,0.0,0.0);
+        for(int i=0;i<in.size()-1;++i)
+        {
+            for(int j=0;j<3;++j)
+            {
+                f(in(i)*3+j)+=f_forces(i*3+j);
+                sum_force(j)+=f_forces(i*3+j);
+            }
+        }
+        int f_last=in(in.size()-1)*3;
+        f(f_last)+=-sum_force(0);
+        f(f_last+1)+=-sum_force(1);
+        f(f_last+2)+=m*v.size()/3.0*GravityAcceleration-sum_force(2);
+#else
         for(int i=0;i<in.size();++i)
         {
             for(int j=0;j<3;++j)
@@ -76,6 +91,8 @@ typedef MatrixXd MatrixXs;
                 f(in(i)*3+j)+=f_forces(i*3+j);
             }
         }
+#endif
+
         /* float vm=4.5f*9.8f/(v.size()/3);
         f.resize(v.size());f.setZero();
         for(int i=0;i<v.size()/3;++i)
@@ -97,9 +114,11 @@ typedef MatrixXd MatrixXs;
     void predecomposition();
     void local_step(VectorXs &pos);
     void global_step();
+    void linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
+    void newton();
     void Anderson();
     void Opt();
-    bool print_balance_info();
+    bool print_balance_info(scalar cof);
     void get_energy(VectorXs &pos, scalar &energy);
     void compute_jacobi();
     
@@ -134,7 +153,11 @@ typedef MatrixXd MatrixXs;
     MatrixXs jacobi;
     MatrixXs delta;
     SimplicialLDLT<spma> v_solver;
+    MatrixXs leftmat;
     bool v_solver_info=false;
+
+    SimplicialLDLT<spma> hessian_solver;
+    bool hessian_solver_info=false;
 };
 
 
@@ -144,11 +167,11 @@ PYBIND11_MODULE(pd_cpp, m) {
   .def(py::init<>())
   .def_readwrite("v",&DiffSimulation::v)
   .def_readwrite("jacobi",&DiffSimulation::jacobi)
+  .def_readwrite("leftmat",&DiffSimulation::leftmat)
   .def("set_info",&DiffSimulation::set_info)
   .def("set_vertices",&DiffSimulation::set_vertices)
   .def("set_forces",&DiffSimulation::set_forces)
-  .def("calc_edgelist",&DiffSimulation::calc_edgelist)
-  .def("predecomposition",&DiffSimulation::predecomposition)
+  .def("newton",&DiffSimulation::newton)
   .def("Opt",&DiffSimulation::Opt)
   .def("print_balance_info",&DiffSimulation::print_balance_info)
   .def("compute_jacobi",&DiffSimulation::compute_jacobi);

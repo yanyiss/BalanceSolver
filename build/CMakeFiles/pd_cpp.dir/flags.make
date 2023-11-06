@@ -6,5 +6,5 @@ CXX_DEFINES = -Dpd_cpp_EXPORTS
 
 CXX_INCLUDES = -I/home/yanyisheshou/Program/DiffSimulation/include -I/home/yanyisheshou/Program/DiffSimulation/eigen3 -isystem /home/yanyisheshou/Program/DiffSimulation/pybind11/include -isystem /home/yanyisheshou/anaconda3/envs/code/include/python3.9
 
-CXX_FLAGS = -std=gnu++11 -fPIC -fvisibility=hidden -flto -fno-fat-lto-objects
+CXX_FLAGS = -O3 -DNDEBUG -std=gnu++11 -fPIC -fvisibility=hidden -flto -fno-fat-lto-objects
 

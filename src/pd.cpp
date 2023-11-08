@@ -396,7 +396,7 @@ void DiffSimulation::get_energy(VectorXs &pos,scalar &energy)
 void DiffSimulation::compute_jacobi()
 {
     vtp tri;
-    tri.reserve(e.rows()*36+9);
+    tri.reserve(e.rows()*36+3);
     MatrixX3s vjk;
     vjk.resize(3,3);
     for(int i=0;i<e.rows();++i)
@@ -476,7 +476,7 @@ void DiffSimulation::compute_jacobi()
     /* std::cout<<v_solver.info()<<std::endl;
     std::cout<<v_solver.determinant()<<std::endl; */
     jacobi=v_solver.solve(delta);
-    leftmat=v_mat;
-    auto resi=v_mat*jacobi-delta;
+    /* leftmat=v_mat;
+    auto resi=v_mat*jacobi-delta; */
     //std::cout<<"feoooes"<<resi.norm()<<std::endl;
 }

@@ -132,7 +132,7 @@ void DiffSimulation::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
         v_tdv=pos+times*dir;
         get_energy(v_tdv,step_energy);
     }while(times>1.0e-4&&step_energy>current_energy);
-    if(times<1.0e-4)
+    if(times>1.0e-4)
     {
         new_pos=std::move(v_tdv);
     }
@@ -203,7 +203,7 @@ void DiffSimulation::newton()
         hessian_solver_info=true;
     }
     hessian_solver.factorize(hessian);
-    if(hessian_solver.inf()!=0)
+    if(hessian_solver.info()!=0)
     {
         std::cout<<"hessian factorize failed"<<std::endl;
         exit(0);
@@ -475,8 +475,12 @@ void DiffSimulation::compute_jacobi()
     v_solver.factorize(v_mat);
     /* std::cout<<v_solver.info()<<std::endl;
     std::cout<<v_solver.determinant()<<std::endl; */
-    jacobi=v_solver.solve(delta);
-    /* leftmat=v_mat;
-    auto resi=v_mat*jacobi-delta; */
-    //std::cout<<"feoooes"<<resi.norm()<<std::endl;
+    
+    jacobi.resize(v.size(),in.size()*3);
+#pragma omp parallel for num_threads(6)
+    for(int i=0;i<in.size()*3;++i)
+    {
+        jacobi.col(i)=v_solver.solve(delta.col(i));
+    }
+    //jacobi=v_solver.solve(delta);
 }

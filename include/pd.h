@@ -4,6 +4,7 @@
 #include <pybind11/eigen.h>
 #include <Eigen/SparseCholesky>
 #include <list>
+#include <omp.h>
 using namespace std;
 namespace py=pybind11;
 using namespace Eigen;

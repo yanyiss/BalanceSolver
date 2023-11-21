@@ -12,7 +12,7 @@ using namespace Eigen;
 //reference https://zhuanlan.zhihu.com/p/441301638
 //          Anderson Acceleration for Geometry Optimization and Physics Simulation
 
-
+//cmake .. -DCMAKE_BUILD_TYPE=Release
 class DiffSimulation
 {
 public:
@@ -119,7 +119,7 @@ typedef MatrixXd MatrixXs;
     void newton();
     void Anderson();
     void Opt();
-    bool print_balance_info(scalar cof);
+    void print_balance_info(scalar cof);
     void get_energy(VectorXs &pos, scalar &energy);
     void compute_jacobi();
     
@@ -138,7 +138,10 @@ typedef MatrixXd MatrixXs;
     VectorXs y;
     VectorXs f;
     VectorXs d;
-    MatrixX3s e;
+    MatrixX2i e;
+    VectorXs el;
+    scalar balance_cof;
+    scalar balance_rate=1.0;
 
     std::list<VectorXs> v_list;
     int max_num=7;
@@ -155,6 +158,7 @@ typedef MatrixXd MatrixXs;
     MatrixXs delta;
     SimplicialLDLT<spma> v_solver;
     MatrixXs leftmat;
+    MatrixXs leftmatinv;
     bool v_solver_info=false;
 
     SimplicialLDLT<spma> hessian_solver;
@@ -167,8 +171,12 @@ PYBIND11_MODULE(pd_cpp, m) {
   py::class_<DiffSimulation>(m,"DiffSimulation")
   .def(py::init<>())
   .def_readwrite("v",&DiffSimulation::v)
+  .def_readwrite("y",&DiffSimulation::y)
   .def_readwrite("jacobi",&DiffSimulation::jacobi)
   .def_readwrite("leftmat",&DiffSimulation::leftmat)
+  .def_readwrite("leftmatinv",&DiffSimulation::leftmatinv)
+  .def_readwrite("delta",&DiffSimulation::delta)
+  .def_readwrite("balance_rate",&DiffSimulation::balance_rate)
   .def("set_info",&DiffSimulation::set_info)
   .def("set_vertices",&DiffSimulation::set_vertices)
   .def("set_forces",&DiffSimulation::set_forces)
@@ -177,3 +185,4 @@ PYBIND11_MODULE(pd_cpp, m) {
   .def("print_balance_info",&DiffSimulation::print_balance_info)
   .def("compute_jacobi",&DiffSimulation::compute_jacobi);
 }
+//make;rm /home/yanyisheshou/Program/TarpDesign/algorithm/pd_cpp.cpython-39-x86_64-linux-gnu.so;mv pd_cpp.cpython-39-x86_64-linux-gnu.so /home/yanyisheshou/Program/TarpDesign/algorithm/

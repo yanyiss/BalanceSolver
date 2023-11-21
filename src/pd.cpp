@@ -20,17 +20,18 @@ void DiffSimulation::calc_edgelist()
             }
         }
     }
-    e.resize(edgelist.size(),3);
+    e.resize(edgelist.size(),2);
+    el.resize(edgelist.size());
     int i=0;
     for(auto edge:edgelist)
     {
         e(i,0)=edge.first;
         e(i,1)=edge.second;
-        e(i,2)=0;
+        el(i)=0;
         for(int j=0;j<3;++j)
-            e(i,2)+=(v(edge.first*3+j)-v(edge.second*3+j))
+            el(i)+=(v(edge.first*3+j)-v(edge.second*3+j))
                    *(v(edge.first*3+j)-v(edge.second*3+j));
-        e(i,2)=std::sqrt(e(i,2));
+        el(i)=std::sqrt(el(i));
         ++i;
     }
     //std::cout<<"edge num: "<<e.rows()<<std::endl;
@@ -104,7 +105,7 @@ void DiffSimulation::local_step(VectorXs &pos)
         vij.normalize();
         for(int j=0;j<3;++j)
         {
-            d(i*3+j)=vij(j)*e(i,2);
+            d(i*3+j)=vij(j)*el(i);
         }
         /* std::cout<<id0/3<<id1/3<<std::endl;
         std::cout<<vij<<std::endl;
@@ -120,19 +121,22 @@ void DiffSimulation::global_step()
 
 void DiffSimulation::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
 {
+#if 1
     scalar current_energy;
     get_energy(pos,current_energy);
 
-    scalar times=1.0;
+    scalar times=2.0;
     VectorXs v_tdv;
     scalar step_energy;
     do
     {
-        times*=0.8;
+        times*=0.5;
         v_tdv=pos+times*dir;
         get_energy(v_tdv,step_energy);
-    }while(times>1.0e-4&&step_energy>current_energy);
-    if(times>1.0e-4)
+    }while(times>1.0e-8&&step_energy>current_energy);
+    new_pos=std::move(v_tdv);
+    return;
+    if(times>1.0e-8)
     {
         new_pos=std::move(v_tdv);
     }
@@ -140,16 +144,44 @@ void DiffSimulation::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
     {
         new_pos=pos;
     }
+#else
+    scalar current_rate=0;
+    print_balance_info(balance_cof);
+    current_rate=balance_rate;
+
+    scalar times=2.0;
+    VectorXs v_tdv;
+    scalar step_rate;
+    do
+    {
+        times*=0.5;
+        v_tdv=pos+times*dir;
+        print_balance_info(balance_cof);
+        step_rate=balance_rate;
+    }while(times>1.0e-6&&step_rate>current_rate);
+    new_pos=std::move(v_tdv);
+    return;
+    if(times>1.0e-8)
+    {
+        new_pos=std::move(v_tdv);
+    }
+    else
+    {
+        new_pos=pos;
+    }
+#endif
 }
 
 void DiffSimulation::newton()
 {
     //compute gradient and hessian
+    //for(int iter=0;iter<5;++iter)
+    //{
     VectorXs gradient;
     gradient.resize(v.size());
     gradient.setZero();
     vtp tri;
-    Vector3s vij;
+    Vector3s v01;
     MatrixX3s vijk;
     vijk.resize(3,3);
     scalar h2s=h*h*s;
@@ -157,20 +189,20 @@ void DiffSimulation::newton()
     {
         int id0=e(i,0);
         int id1=e(i,1);
-        vij<<v(id0*3)-v(id1*3),v(id0*3+1)-v(id1*3+1),v(id0*3+2)-v(id1*3+2);
-        Vector3s gij=s*(vij.norm()-e(i,2))*vij.normalized();
+        v01<<v(id0*3)-v(id1*3),v(id0*3+1)-v(id1*3+1),v(id0*3+2)-v(id1*3+2);
+        Vector3s g01=s*(v01.norm()-el(i))*v01.normalized();
         for(int j=0;j<3;++j)
         {
-            gradient(id0*3+j)+=gij(j);
-            gradient(id1*3+j)-=gij(j);
+            gradient(id0*3+j)+=g01(j);
+            gradient(id1*3+j)-=g01(j);
         }
 
-        scalar len_inv=1.0/vij.norm();
-        scalar len_inv3=e(i,2)*len_inv*len_inv*len_inv;
-        len_inv*=e(i,2);
-        vijk<<1.0-len_inv+vij(0)*vij(0)*len_inv3,             vij(0)*vij(1)*len_inv3,             vij(0)*vij(2)*len_inv3,
-                          vij(1)*vij(0)*len_inv3, 1.0-len_inv+vij(1)*vij(1)*len_inv3,             vij(1)*vij(2)*len_inv3,
-                          vij(2)*vij(0)*len_inv3,             vij(2)*vij(1)*len_inv3, 1.0-len_inv+vij(2)*vij(2)*len_inv3;
+        scalar len_inv=1.0/v01.norm();
+        scalar len_inv3=el(i)*len_inv*len_inv*len_inv;
+        len_inv*=el(i);
+        vijk<<1.0-len_inv+v01(0)*v01(0)*len_inv3,             v01(0)*v01(1)*len_inv3,             v01(0)*v01(2)*len_inv3,
+                          v01(1)*v01(0)*len_inv3, 1.0-len_inv+v01(1)*v01(1)*len_inv3,             v01(1)*v01(2)*len_inv3,
+                          v01(2)*v01(0)*len_inv3,             v01(2)*v01(1)*len_inv3, 1.0-len_inv+v01(2)*v01(2)*len_inv3;
         for(int j=0;j<3;++j)
         {
             for(int k=0;k<3;++k)
@@ -210,6 +242,7 @@ void DiffSimulation::newton()
     }
     VectorXs dir=-hessian_solver.solve(gradient);
     linesearch(v,dir,v_new);
+    //}
 
     Vector3s trans(v(a*3)-v_new(a*3),v(a*3+1)-v_new(a*3+1),v(a*3+2)-v_new(a*3+2));
     for(int i=0;i<v.size()/3;++i)
@@ -306,12 +339,14 @@ void DiffSimulation::Opt()
     v_list.clear();
     //translate the mesh
     Vector3s trans(v(a*3)-v_new(a*3),v(a*3+1)-v_new(a*3+1),v(a*3+2)-v_new(a*3+2));
+    //trans.normalize();
+    //trans*=0.999;
     for(int i=0;i<v.size()/3;++i)
     {
         for(int j=0;j<3;++j)
         {
             v_new(i*3+j)+=trans(j);
-        }
+        } 
     }
     //bool balance=print_balance_info();
     
@@ -319,8 +354,9 @@ void DiffSimulation::Opt()
     v=v_new;
 }
 
-bool DiffSimulation::print_balance_info(scalar cof)
+void DiffSimulation::print_balance_info(scalar cof)
 {
+    balance_cof=cof;
     MatrixX3s balance;
     balance.resize(f.size()/3,3);
     for(int i=0;i<f.size()/3;++i)
@@ -337,13 +373,15 @@ bool DiffSimulation::print_balance_info(scalar cof)
         int id1=e(i,1)*3;
         vij<<v_new(id0)-v_new(id1),v_new(id0+1)-v_new(id1+1),
         v_new(id0+2)-v_new(id1+2);
-        vij*=s*(1-e(i,2)/vij.norm());
+        vij*=s*(1-el(i)/vij.norm());
         balance.row(e(i,0))-=vij;
         balance.row(e(i,1))+=vij;
     }
-    scalar meanNorm=balance.rowwise().norm().sum()/balance.rows();
+    VectorXs Norm=balance.rowwise().norm();
     std::cout<<"\nBalance Info:\n";
+    scalar meanNorm=Norm.sum()/Norm.size();
     std::cout<<"Mean Norm: "<<meanNorm<<std::endl;
+    std::cout<<"Max Norm: "<<Norm.maxCoeff()<<std::endl;
     /* std::cout<<"balance info:\n";
     std::cout<<"resultant force: "<<f.sum()<<std::endl;
     std::cout<<"Frobenius Norm: "<<balance.norm()<<std::endl;
@@ -355,7 +393,8 @@ bool DiffSimulation::print_balance_info(scalar cof)
     {
         std::cout<<i<<" "<<mean1(i)<<std::endl;
     } */
-
+    balance_rate=meanNorm/(9.8*m);
+    /* return meanNorm/(9.8*m);
     if(meanNorm<9.8*m*cof)
     {
         return true;
@@ -363,7 +402,7 @@ bool DiffSimulation::print_balance_info(scalar cof)
     else
     {
         return false;
-    }
+    } */
     /* for(int i=0;i<norm.size();++i)
     {
         std::cout<<i<<" "<<norm(i)<<std::endl;
@@ -386,7 +425,7 @@ void DiffSimulation::get_energy(VectorXs &pos,scalar &energy)
         int id0=e(i,0);
         int id1=e(i,1);
         vij<<pos(id0*3)-pos(id1*3),pos(id0*3+1)-pos(id1*3+1),pos(id0*3+2)-pos(id1*3+2);
-        scalar delta=vij.norm()-e(i,2);
+        scalar delta=vij.norm()-el(i);
         energy+=0.5*h2s*delta*delta;
     }
     scalar Work=pos.transpose()*f;
@@ -395,6 +434,51 @@ void DiffSimulation::get_energy(VectorXs &pos,scalar &energy)
 
 void DiffSimulation::compute_jacobi()
 {
+   /*  std::cout<<"info\n"<<std::endl;
+    std::cout<<f.norm()<<" "<<y.norm()<<" "<<v.norm()<<std::endl;
+    jacobi.resize(v.size(),in.size()*3-3);
+    jacobi.setZero();
+    VectorXs f_temp=f;
+    VectorXs v_stable=v;
+    VectorXs y_temp=y;
+    scalar dif=1e-4;
+    int inback=in(in.size()-1);
+    //for(int i=0;i<in.size()-1;++i)
+    for(int i=0;i<1;++i)
+    {
+        for(int j=0;j<1;++j)
+        {
+            f(in(i)*3+j)+=dif;
+            f(inback*3+j)-=dif;
+            do
+            {
+#if 0
+                Opt();
+#else
+                if(balance_rate>1e-4)
+                Opt();
+                else
+                newton();
+#endif
+                print_balance_info(balance_cof);
+            }while(balance_rate>balance_cof);
+
+            VectorXs v_dif=(v-v_stable)/dif;
+            for(int k=0;k<v.size();++k)
+            {
+                jacobi(k,i*3+j)=v_dif(k);
+            }
+
+            f=f_temp;
+            v=v_stable;
+            y=y_temp;
+        }
+    }
+    std::cout<<"jacobi\n";
+    std::cout<<jacobi.norm()<<std::endl;
+    return; */
+ 
+
     vtp tri;
     tri.reserve(e.rows()*36+3);
     MatrixX3s vjk;
@@ -406,8 +490,8 @@ void DiffSimulation::compute_jacobi()
         //std::cout<<i<<" "<<id0<<" "<<id1<<std::endl;
         Vector3s v01(v(id1*3)-v(id0*3),v(id1*3+1)-v(id0*3+1),v(id1*3+2)-v(id0*3+2));
         scalar len_inv=1.0/v01.norm();
-        scalar len_inv3=e(i,2)*len_inv*len_inv*len_inv;
-        len_inv*=e(i,2);
+        scalar len_inv3=el(i)*len_inv*len_inv*len_inv;
+        len_inv*=el(i);
         vjk<<1.0-len_inv+v01(0)*v01(0)*len_inv3,             v01(0)*v01(1)*len_inv3,             v01(0)*v01(2)*len_inv3,
                          v01(1)*v01(0)*len_inv3, 1.0-len_inv+v01(1)*v01(1)*len_inv3,             v01(1)*v01(2)*len_inv3,
                          v01(2)*v01(0)*len_inv3,             v01(2)*v01(1)*len_inv3, 1.0-len_inv+v01(2)*v01(2)*len_inv3;
@@ -445,7 +529,7 @@ void DiffSimulation::compute_jacobi()
     
     if(!v_solver_info)
     {
-#if 0
+#if 1
         delta.resize(v.size(),in.size()*3-3);
         delta.setZero();
         scalar s_inv=1.0/s;
@@ -457,6 +541,16 @@ void DiffSimulation::compute_jacobi()
                 delta(in(in.size()-1)*3+j,i*3+j)=-s_inv;
             }
         }
+        /* for(int i=0;i<3;++i)
+        {
+            delta(in(0)*3+i,0*3+i)=s_inv;
+            for(int j=1;j<in.size()-1;++j)
+            {
+                delta(in(j-1)*3+i,(j-1)*3+i)=-s_inv;
+                delta(in(j)*3+i,j*3+i)=s_inv;
+            }
+            delta(in(in.size()-2)*3+i,(in.size()-2)*3+i)=-s_inv;
+        } */
 #else
         delta.resize(v.size(),in.size()*3);
         delta.setZero();
@@ -477,10 +571,35 @@ void DiffSimulation::compute_jacobi()
     std::cout<<v_solver.determinant()<<std::endl; */
     
     jacobi.resize(v.size(),in.size()*3);
-#pragma omp parallel for num_threads(6)
+/* #pragma omp parallel for num_threads(6)
     for(int i=0;i<in.size()*3;++i)
     {
         jacobi.col(i)=v_solver.solve(delta.col(i));
+    } */
+    jacobi=v_solver.solve(delta);
+
+    ///std::cout<<"vmat\n";
+    //std::cout<<v_mat*jacobi-delta<<std::endl;
+    leftmat=v_mat;
+
+    /* int adj[3]={1,4,6};
+    scalar len[3]={2.7,1.684399,1.9885};
+    MatrixX3s sum;
+    sum.resize(3,3);
+    sum.setZero();
+    MatrixX3s id;
+    id.resize(3,3);
+    id.setZero();
+    id(0,0)=1.0;id(1,1)=1.0;id(2,2)=1.0;
+    for(int i=0;i<3;++i)
+    {
+        Vector3s v01(v(adj[i]*3)-v(0),v(adj[i]*3+1)-v(1),v(adj[i]*3+2)-v(2));
+        scalar norm=v01.norm();
+        MatrixX3s mat=id*(1-len[i]/norm)+len[i]*v01*v01.transpose()/(norm*norm*norm);
+        sum+=mat*(jacobi.block(adj[i]*3,0,3,3)-jacobi.block(0,0,3,3));
+        std::cout<<"\n"<<i<<std::endl;
+        std::cout<<mat<<std::endl;
+        std::cout<<jacobi.block(adj[i]*3,0,3,3)-jacobi.block(0,0,3,3)<<std::endl;
     }
-    //jacobi=v_solver.solve(delta);
+    std::cout<<sum<<std::endl; */
 }

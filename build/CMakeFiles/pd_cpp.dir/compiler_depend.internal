@@ -3,6 +3,10 @@
 
 CMakeFiles/pd_cpp.dir/src/pd.cpp.o
  /home/yanyisheshou/Program/DiffSimulation/src/pd.cpp
+ /home/yanyisheshou/Program/DiffSimulation/HLBFGS/HLBFGS.h
+ /home/yanyisheshou/Program/DiffSimulation/HLBFGS/HLBFGS_Hessian.h
+ /home/yanyisheshou/Program/DiffSimulation/HLBFGS/Lite_Sparse_Entry.h
+ /home/yanyisheshou/Program/DiffSimulation/HLBFGS/Lite_Sparse_Matrix.h
  /home/yanyisheshou/Program/DiffSimulation/eigen3/Eigen/Cholesky
  /home/yanyisheshou/Program/DiffSimulation/eigen3/Eigen/Core
  /home/yanyisheshou/Program/DiffSimulation/eigen3/Eigen/Dense

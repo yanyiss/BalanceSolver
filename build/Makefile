@@ -129,6 +129,19 @@ pd_cpp/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pd_cpp.dir/build.make CMakeFiles/pd_cpp.dir/build
 .PHONY : pd_cpp/fast
 
+#=============================================================================
+# Target rules for targets named HLBFGS
+
+# Build rule for target.
+HLBFGS: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 HLBFGS
+.PHONY : HLBFGS
+
+# fast build rule for target.
+HLBFGS/fast:
+	$(MAKE) $(MAKESILENT) -f HLBFGS/CMakeFiles/HLBFGS.dir/build.make HLBFGS/CMakeFiles/HLBFGS.dir/build
+.PHONY : HLBFGS/fast
+
 src/pd.o: src/pd.cpp.o
 .PHONY : src/pd.o
 
@@ -161,6 +174,7 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
+	@echo "... HLBFGS"
 	@echo "... pd_cpp"
 	@echo "... src/pd.o"
 	@echo "... src/pd.i"

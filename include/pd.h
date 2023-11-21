@@ -3,6 +3,7 @@
 #include <Eigen/Dense>
 #include <pybind11/eigen.h>
 #include <Eigen/SparseCholesky>
+#include "HLBFGS.h"
 #include <list>
 #include <omp.h>
 using namespace std;
@@ -12,13 +13,6 @@ using namespace Eigen;
 //reference https://zhuanlan.zhihu.com/p/441301638
 //          Anderson Acceleration for Geometry Optimization and Physics Simulation
 
-//cmake .. -DCMAKE_BUILD_TYPE=Release
-class DiffSimulation
-{
-public:
-    DiffSimulation(){}
-    ~DiffSimulation(){}
-public:
 #if 0
 typedef float scalar;
 typedef MatrixX3f MatrixX3s;
@@ -34,6 +28,15 @@ typedef Vector3d Vector3s;
 typedef MatrixXd MatrixXs;
 //typedef Matirx3d Matrix3s;
 #endif
+
+void func_callback(const size_t N, const std::vector<scalar>& x_evaluation, scalar& energy_evaluation, 
+                                   std::vector<scalar>& gradient_evaluation, void* user_supply);
+
+class DiffSimulation
+{
+public:
+    DiffSimulation(){}
+    ~DiffSimulation(){}
 
     void set_info(MatrixX3i &t_triangles,VectorXs &v_vertices,VectorXi &in_index,
     scalar s_stiffness,scalar h_interval,scalar m_mass,int a_attach)
@@ -115,12 +118,16 @@ typedef MatrixXd MatrixXs;
     void predecomposition();
     void local_step(VectorXs &pos);
     void global_step();
+    void trans_fix();
     void linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
     void newton();
+    void LBFGS();
     void Anderson();
     void Opt();
     void print_balance_info(scalar cof);
     void get_energy(VectorXs &pos, scalar &energy);
+    void get_gradient(VectorXs &pos, std::vector<scalar> &gradient);
+    void energy_and_gradient_evaluation(const std::vector<scalar>& x_evaluation, scalar& energy_evaluation, std::vector<scalar>& gradient_evaluation);
     void compute_jacobi();
     
 
@@ -180,9 +187,11 @@ PYBIND11_MODULE(pd_cpp, m) {
   .def("set_info",&DiffSimulation::set_info)
   .def("set_vertices",&DiffSimulation::set_vertices)
   .def("set_forces",&DiffSimulation::set_forces)
+  .def("LBFGS",&DiffSimulation::LBFGS)
   .def("newton",&DiffSimulation::newton)
   .def("Opt",&DiffSimulation::Opt)
   .def("print_balance_info",&DiffSimulation::print_balance_info)
   .def("compute_jacobi",&DiffSimulation::compute_jacobi);
 }
+//cmake .. -DCMAKE_BUILD_TYPE=Release
 //make;rm /home/yanyisheshou/Program/TarpDesign/algorithm/pd_cpp.cpython-39-x86_64-linux-gnu.so;mv pd_cpp.cpython-39-x86_64-linux-gnu.so /home/yanyisheshou/Program/TarpDesign/algorithm/

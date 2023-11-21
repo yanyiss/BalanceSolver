@@ -1,1 +1,1 @@
-/usr/bin/c++ -fPIC -O3 -DNDEBUG -flto -shared  -o pd_cpp.cpython-39-x86_64-linux-gnu.so CMakeFiles/pd_cpp.dir/src/pd.cpp.o 
+/usr/bin/c++ -fPIC -O3 -DNDEBUG -flto -shared  -o pd_cpp.cpython-39-x86_64-linux-gnu.so CMakeFiles/pd_cpp.dir/src/pd.cpp.o  -Wl,-rpath,/home/yanyisheshou/Program/DiffSimulation/build/HLBFGS HLBFGS/libHLBFGS.so 

@@ -172,6 +172,20 @@ void DiffSimulation::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
 #endif
 }
 
+void DiffSimulation::trans_fix()
+{
+    Vector3s trans(v(a*3)-v_new(a*3),v(a*3+1)-v_new(a*3+1),v(a*3+2)-v_new(a*3+2));
+    for(int i=0;i<v.size()/3;++i)
+    {
+        for(int j=0;j<3;++j)
+        {
+            v_new(i*3+j)+=trans(j);
+        }
+    }
+    y=v_new+(v_new-v)*0.1;
+    v=v_new;
+}
+
 void DiffSimulation::newton()
 {
     //compute gradient and hessian
@@ -242,20 +256,7 @@ void DiffSimulation::newton()
     }
     VectorXs dir=-hessian_solver.solve(gradient);
     linesearch(v,dir,v_new);
-    //}
-
-    Vector3s trans(v(a*3)-v_new(a*3),v(a*3+1)-v_new(a*3+1),v(a*3+2)-v_new(a*3+2));
-    for(int i=0;i<v.size()/3;++i)
-    {
-        for(int j=0;j<3;++j)
-        {
-            v_new(i*3+j)+=trans(j);
-        }
-    }
-    //bool balance=print_balance_info();
-    
-    y=v_new+(v_new-v)*0.1;
-    v=v_new;
+    trans_fix();
 }
 
 void DiffSimulation::Anderson()
@@ -338,20 +339,7 @@ void DiffSimulation::Opt()
 
     v_list.clear();
     //translate the mesh
-    Vector3s trans(v(a*3)-v_new(a*3),v(a*3+1)-v_new(a*3+1),v(a*3+2)-v_new(a*3+2));
-    //trans.normalize();
-    //trans*=0.999;
-    for(int i=0;i<v.size()/3;++i)
-    {
-        for(int j=0;j<3;++j)
-        {
-            v_new(i*3+j)+=trans(j);
-        } 
-    }
-    //bool balance=print_balance_info();
-    
-    y=v_new+(v_new-v)*0.1;
-    v=v_new;
+    trans_fix();
 }
 
 void DiffSimulation::print_balance_info(scalar cof)
@@ -430,6 +418,53 @@ void DiffSimulation::get_energy(VectorXs &pos,scalar &energy)
     }
     scalar Work=pos.transpose()*f;
     energy-=Work*h*h;
+}
+
+void DiffSimulation::get_gradient(VectorXs &pos,std::vector<scalar> &gradient)
+{
+    gradient.resize(v.size(),0);
+    scalar h2s=h*h*s;
+    Vector3s v01;
+    for(int i=0;i<e.rows();++i)
+    {
+        int id0=e(i,0);
+        int id1=e(i,1);
+        v01<<v(id0*3)-v(id1*3),v(id0*3+1)-v(id1*3+1),v(id0*3+2)-v(id1*3+2);
+        Vector3s g01=h2s*(v01.norm()-el(i))*v01.normalized();
+        for(int j=0;j<3;++j)
+        {
+            gradient[id0*3+j]+=g01(j);
+            gradient[id1*3+j]-=g01(j);
+        }
+    }
+    for(int i=0;i<f.size();++i)
+    {
+        gradient[i]=-h2s*f(i)+m*(v(i)-y(i));
+    }
+}
+
+void DiffSimulation::energy_and_gradient_evaluation(const std::vector<scalar>& x_evaluation, scalar& energy_evaluation, 
+                                   std::vector<scalar>& gradient_evaluation)
+{
+    VectorXs pos;
+    pos.resize(v.size());
+    for(int i=0;i<v.size();++i)
+    {
+        pos(i)=x_evaluation[i];
+    }
+    get_energy(pos,energy_evaluation);
+    get_gradient(pos,gradient_evaluation);
+}
+
+void DiffSimulation::LBFGS()
+{
+    HLBFGS hlbfgs_solver;
+	hlbfgs_solver.set_number_of_variables(v.size());
+	hlbfgs_solver.set_verbose(true);
+	hlbfgs_solver.set_func_callback(func_callback, 0, 0, 0, 0);
+    v_new=v;
+	hlbfgs_solver.optimize_without_constraints(&v_new(0), 100, this);
+    trans_fix();
 }
 
 void DiffSimulation::compute_jacobi()
@@ -602,4 +637,11 @@ void DiffSimulation::compute_jacobi()
         std::cout<<jacobi.block(adj[i]*3,0,3,3)-jacobi.block(0,0,3,3)<<std::endl;
     }
     std::cout<<sum<<std::endl; */
+}
+
+void func_callback(const size_t N, const std::vector<scalar>& x_evaluation, scalar& energy_evaluation, 
+                                   std::vector<scalar>& gradient_evaluation, void* user_supply)
+{
+	auto ptr_this = static_cast<DiffSimulation*>(user_supply);
+	ptr_this->energy_and_gradient_evaluation(x_evaluation, energy_evaluation, gradient_evaluation);
 }

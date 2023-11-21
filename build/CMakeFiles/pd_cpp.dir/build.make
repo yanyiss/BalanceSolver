@@ -92,6 +92,7 @@ pd_cpp_EXTERNAL_OBJECTS =
 
 pd_cpp.cpython-39-x86_64-linux-gnu.so: CMakeFiles/pd_cpp.dir/src/pd.cpp.o
 pd_cpp.cpython-39-x86_64-linux-gnu.so: CMakeFiles/pd_cpp.dir/build.make
+pd_cpp.cpython-39-x86_64-linux-gnu.so: HLBFGS/libHLBFGS.so
 pd_cpp.cpython-39-x86_64-linux-gnu.so: CMakeFiles/pd_cpp.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/yanyisheshou/Program/DiffSimulation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX shared module pd_cpp.cpython-39-x86_64-linux-gnu.so"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/pd_cpp.dir/link.txt --verbose=$(VERBOSE)

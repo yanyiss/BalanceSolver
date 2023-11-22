@@ -32,6 +32,9 @@ typedef MatrixXd MatrixXs;
 void func_callback(const size_t N, const std::vector<scalar>& x_evaluation, scalar& energy_evaluation, 
                                    std::vector<scalar>& gradient_evaluation, void* user_supply);
 
+
+#define USE_FIXED_ENERGY
+
 class DiffSimulation
 {
 public:
@@ -44,6 +47,12 @@ public:
         t=t_triangles;v=v_vertices;in=in_index;
         v_new=v;y=v;
         s=s_stiffness;h=h_interval;m=m_mass*3.0/v.size();a=a_attach;
+#ifdef USE_FIXED_ENERGY
+        for(int i=0;i<3;++i)
+        {
+            a_pos(i)=v(a*3+i);
+        }
+#endif
         calc_edgelist();
         predecomposition();
         d.resize(e.rows()*3);
@@ -119,14 +128,15 @@ public:
     void local_step(VectorXs &pos);
     void global_step();
     void trans_fix();
-    void linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
+    bool linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
     void newton();
     void LBFGS();
     void Anderson();
     void Opt();
     void print_balance_info(scalar cof);
-    void get_energy(VectorXs &pos, scalar &energy);
-    void get_gradient(VectorXs &pos, std::vector<scalar> &gradient);
+    void get_energy(VectorXs &pos, scalar &out_energy);
+    void get_energy_with_fixed(VectorXs &pos, scalar &out_energy);
+    void get_gradient_with_fixed(VectorXs &pos, std::vector<scalar> &gradient);
     void energy_and_gradient_evaluation(const std::vector<scalar>& x_evaluation, scalar& energy_evaluation, std::vector<scalar>& gradient_evaluation);
     void compute_jacobi();
     
@@ -138,6 +148,9 @@ public:
     scalar m;
     scalar energy;
     int a;
+#ifdef USE_FIXED_ENERGY
+    Vector3s a_pos;
+#endif
 
     VectorXs v;
     VectorXs v_new;

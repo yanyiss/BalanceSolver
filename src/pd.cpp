@@ -1,6 +1,7 @@
 #include "pd.h"
 #include <set>
 #include <iomanip>
+
 void DiffSimulation::calc_edgelist()
 {
     std::set<std::pair<int,int>> edgelist;
@@ -119,7 +120,7 @@ void DiffSimulation::global_step()
     v_new=solver.solve(m*y+h*h*(J*d+f));
 }
 
-void DiffSimulation::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
+bool DiffSimulation::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
 {
 #if 1
     scalar current_energy;
@@ -134,15 +135,15 @@ void DiffSimulation::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
         v_tdv=pos+times*dir;
         get_energy(v_tdv,step_energy);
     }while(times>1.0e-8&&step_energy>current_energy);
-    new_pos=std::move(v_tdv);
-    return;
+    
     if(times>1.0e-8)
     {
         new_pos=std::move(v_tdv);
+        return true;
     }
     else
     {
-        new_pos=pos;
+        return false;
     }
 #else
     scalar current_rate=0;
@@ -158,16 +159,15 @@ void DiffSimulation::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
         v_tdv=pos+times*dir;
         print_balance_info(balance_cof);
         step_rate=balance_rate;
-    }while(times>1.0e-6&&step_rate>current_rate);
-    new_pos=std::move(v_tdv);
-    return;
+    }while(times>1.0e-8&&step_rate>current_rate);
     if(times>1.0e-8)
     {
         new_pos=std::move(v_tdv);
+        return true;
     }
     else
     {
-        new_pos=pos;
+        return false;
     }
 #endif
 }
@@ -255,8 +255,17 @@ void DiffSimulation::newton()
         exit(0);
     }
     VectorXs dir=-hessian_solver.solve(gradient);
-    linesearch(v,dir,v_new);
-    trans_fix();
+    if(linesearch(v,dir,v_new))
+    {
+        trans_fix();
+    }
+    else
+    {
+        for(int i=0;i<10;++i)
+        {
+            Opt();
+        }
+    }
 }
 
 void DiffSimulation::Anderson()
@@ -305,6 +314,7 @@ void DiffSimulation::Anderson()
 
 void DiffSimulation::Opt()
 {
+    v_new=v;
     for(int i=0;i<max_num;++i)
     {
         local_step(v_new);
@@ -397,7 +407,7 @@ void DiffSimulation::print_balance_info(scalar cof)
     } */
 }
 
-void DiffSimulation::get_energy(VectorXs &pos,scalar &energy)
+void DiffSimulation::get_energy(VectorXs &pos,scalar &out_energy)
 {
     /* energy= 0.5*pos.transpose()*(Mt2L*pos);
     scalar e_temp=pos.transpose()*(J*d+f);
@@ -405,7 +415,7 @@ void DiffSimulation::get_energy(VectorXs &pos,scalar &energy)
     e_temp=-pos.transpose()*y;
     energy-=e_temp*m;
     energy+=0.5*s*h*h*d.squaredNorm(); */
-    energy=(pos-y).squaredNorm()*m*0.5;
+    out_energy=(pos-y).squaredNorm()*m*0.5;
     scalar h2s=h*h*s;
     Vector3s vij;
     for(int i=0;i<e.rows();++i)
@@ -414,13 +424,21 @@ void DiffSimulation::get_energy(VectorXs &pos,scalar &energy)
         int id1=e(i,1);
         vij<<pos(id0*3)-pos(id1*3),pos(id0*3+1)-pos(id1*3+1),pos(id0*3+2)-pos(id1*3+2);
         scalar delta=vij.norm()-el(i);
-        energy+=0.5*h2s*delta*delta;
+        out_energy+=0.5*h2s*delta*delta;
     }
     scalar Work=pos.transpose()*f;
-    energy-=Work*h*h;
+    out_energy-=Work*h*h;
 }
 
-void DiffSimulation::get_gradient(VectorXs &pos,std::vector<scalar> &gradient)
+void DiffSimulation::get_energy_with_fixed(VectorXs &pos,scalar &out_energy)
+{
+    get_energy(pos,out_energy);
+    Vector3s v01;
+    v01<<pos(a*3)-a_pos(0),pos(a*3+1)-a_pos(1),pos(a*3+2)-a_pos(2);
+    out_energy+=0.5*h*h*s*v01.squaredNorm();
+}
+
+void DiffSimulation::get_gradient_with_fixed(VectorXs &pos,std::vector<scalar> &gradient)
 {
     gradient.resize(v.size(),0);
     scalar h2s=h*h*s;
@@ -429,7 +447,7 @@ void DiffSimulation::get_gradient(VectorXs &pos,std::vector<scalar> &gradient)
     {
         int id0=e(i,0);
         int id1=e(i,1);
-        v01<<v(id0*3)-v(id1*3),v(id0*3+1)-v(id1*3+1),v(id0*3+2)-v(id1*3+2);
+        v01<<pos(id0*3)-pos(id1*3),pos(id0*3+1)-pos(id1*3+1),pos(id0*3+2)-pos(id1*3+2);
         Vector3s g01=h2s*(v01.norm()-el(i))*v01.normalized();
         for(int j=0;j<3;++j)
         {
@@ -439,7 +457,11 @@ void DiffSimulation::get_gradient(VectorXs &pos,std::vector<scalar> &gradient)
     }
     for(int i=0;i<f.size();++i)
     {
-        gradient[i]=-h2s*f(i)+m*(v(i)-y(i));
+        gradient[i]+=-h*h*f(i)+m*(pos(i)-y(i));
+    }
+    for(int i=0;i<3;++i)
+    {
+        gradient[a*3+i]+=h2s*(pos(a*3+i)-a_pos(i));
     }
 }
 
@@ -452,8 +474,8 @@ void DiffSimulation::energy_and_gradient_evaluation(const std::vector<scalar>& x
     {
         pos(i)=x_evaluation[i];
     }
-    get_energy(pos,energy_evaluation);
-    get_gradient(pos,gradient_evaluation);
+    get_energy_with_fixed(pos,energy_evaluation);
+    get_gradient_with_fixed(pos,gradient_evaluation);
 }
 
 void DiffSimulation::LBFGS()
@@ -469,19 +491,20 @@ void DiffSimulation::LBFGS()
 
 void DiffSimulation::compute_jacobi()
 {
-   /*  std::cout<<"info\n"<<std::endl;
+#if 0
+    std::cout<<"info\n"<<std::endl;
     std::cout<<f.norm()<<" "<<y.norm()<<" "<<v.norm()<<std::endl;
     jacobi.resize(v.size(),in.size()*3-3);
     jacobi.setZero();
     VectorXs f_temp=f;
     VectorXs v_stable=v;
     VectorXs y_temp=y;
-    scalar dif=1e-4;
+    scalar dif=1e-3;
     int inback=in(in.size()-1);
     //for(int i=0;i<in.size()-1;++i)
-    for(int i=0;i<1;++i)
+    for(int i=0;i<3;++i)
     {
-        for(int j=0;j<1;++j)
+        for(int j=0;j<3;++j)
         {
             f(in(i)*3+j)+=dif;
             f(inback*3+j)-=dif;
@@ -511,8 +534,8 @@ void DiffSimulation::compute_jacobi()
     }
     std::cout<<"jacobi\n";
     std::cout<<jacobi.norm()<<std::endl;
-    return; */
- 
+    return;
+ #endif
 
     vtp tri;
     tri.reserve(e.rows()*36+3);

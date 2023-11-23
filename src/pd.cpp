@@ -38,6 +38,19 @@ void DiffSimulation::calc_edgelist()
     //std::cout<<"edge num: "<<e.rows()<<std::endl;
 }
 
+void DiffSimulation::init_adj()
+{
+    adj.resize(v.size()/3);
+    adj_len.resize(v.size()/3);
+    for(int i=0;i<e.rows();++i)
+    {
+        adj[e(i,0)].push_back(e(i,1));
+        adj[e(i,1)].push_back(e(i,0));
+        adj_len[e(i,0)].push_back(el(i));
+        adj_len[e(i,1)].push_back(el(i));
+    }
+}
+
 void DiffSimulation::predecomposition()
 {
     int n=v.size();
@@ -232,10 +245,10 @@ void DiffSimulation::newton()
     gradient-=f;
     gradient=m*(v-y)+h*h*gradient;
 
-    for(int i=0;i<3;++i)
+    /* for(int i=0;i<3;++i)
     {
         tri.emplace_back(a*3+i,a*3+i,h2s);
-    }
+    } */
     for(int i=0;i<v.size();++i)
     {
         tri.emplace_back(i,i,m);
@@ -261,10 +274,202 @@ void DiffSimulation::newton()
     }
     else
     {
+        /* projected_newton();
+        return; */
         for(int i=0;i<10;++i)
         {
             Opt();
         }
+    }
+}
+
+void DiffSimulation::projected_newton()
+{
+    VectorXs gradient; gradient.resize(v.size()); gradient.setZero();
+    Vector3s v01;
+    for(int i=0;i<e.rows();++i)
+    {
+        int id0=e(i,0);
+        int id1=e(i,1);
+        v01<<v(id0*3)-v(id1*3),v(id0*3+1)-v(id1*3+1),v(id0*3+2)-v(id1*3+2);
+        Vector3s g01=s*(v01.norm()-el(i))*v01.normalized();
+        for(int j=0;j<3;++j)
+        {
+            gradient(id0*3+j)+=g01(j);
+            gradient(id1*3+j)-=g01(j);
+        }
+    }
+    
+    vtp tri;
+    MatrixX3s vijk; vijk.resize(3,3);
+    MatrixX3s identity; identity.resize(3,3); identity.setZero();
+    for(int i=0;i<3;++i) { identity(i,i)=1.0; }
+    SelfAdjointEigenSolver<MatrixXs> es;
+    MatrixXs U; MatrixXs singmat;
+    scalar h2s=h*h*s;
+    for(int i=0;i<adj.size();++i)
+    {
+        MatrixXs local_hessian; local_hessian.resize(adj[i].size()*3+3,adj[i].size()*3+3); local_hessian.setZero();
+        for(int j=0;j<adj[i].size();++j)
+        {
+            v01<<v(i*3)-v(adj[i][j]*3),v(i*3+1)-v(adj[i][j]*3+1),v(i*3+2)-v(adj[i][j]*3+2);
+            scalar len_inv=1.0/v01.norm();
+            vijk=identity+adj_len[i][j]*len_inv*(v01*v01.transpose()*len_inv*len_inv-identity);
+            local_hessian.block(0,0,3,3)+=vijk;
+            local_hessian.block(0,j*3+3,3,3)+=-vijk;
+            local_hessian.block(j*3+3,0,3,3)+=-vijk;
+            local_hessian.block(j*3+3,j*3+3,3,3)+=vijk;
+        }
+        es.compute(local_hessian);
+        //std::cout<<local_hessian<<std::endl;
+        //std::cout<<std::endl;
+        U=es.eigenvectors();
+        singmat=es.eigenvalues().asDiagonal();
+        //std::cout<<U*singmat*U.transpose()<<std::endl;
+        //std::cout<<std::endl;
+        //std::cout<<singmat<<std::endl;
+        //std::cout<<std::endl;
+        //exit(0);
+        for(int j=0;j<singmat.rows();++j)
+        {
+            singmat(j,j)=std::max(0.0,singmat(j,j));
+        }
+        //std::cout<<U*singmat*U.transpose()<<std::endl;
+        //exit(0);
+        local_hessian=0.5*h2s*U*singmat*U.transpose();
+        for(int ii=0;ii<3;++ii)
+        {
+            for(int jj=0;jj<3;++jj)
+            {
+                tri.emplace_back(i*3+ii,i*3+jj,local_hessian(ii,jj));
+                for(int j=0;j<adj[i].size();++j)
+                {
+                    tri.emplace_back(i*3+ii,adj[i][j]*3+jj,local_hessian(ii,j*3+3+jj));
+                    tri.emplace_back(adj[i][j]*3+ii,i*3+jj,local_hessian(j*3+3+ii,jj));
+                    for(int k=0;k<adj[i].size();++k)
+                    {
+                        tri.emplace_back(adj[i][j]*3+ii,adj[i][k]*3+jj,local_hessian(j*3+3+ii,k*3+3+jj));
+                    }
+                }
+            }
+        }
+    }
+#if 0
+    //compute gradient and hessian
+    //for(int iter=0;iter<5;++iter)
+    //{
+    VectorXs gradient;
+    gradient.resize(v.size());
+    gradient.setZero();
+    vtp tri;
+    Vector3s v01;
+    MatrixX3s vijk;
+    vijk.resize(3,3);
+    MatrixX3s U;Vector3s singvec;
+    MatrixX3s singmat; singmat.resize(3,3); singmat.setZero();
+    scalar h2s=h*h*s;
+    MatrixX3s identity; identity.resize(3,3); identity.setZero();
+    for(int i=0;i<3;++i)
+    {
+        identity(i,i)=1.0;
+    }
+    for(int i=0;i<e.rows();++i)
+    {
+        int id0=e(i,0);
+        int id1=e(i,1);
+        v01<<v(id0*3)-v(id1*3),v(id0*3+1)-v(id1*3+1),v(id0*3+2)-v(id1*3+2);
+        Vector3s g01=s*(v01.norm()-el(i))*v01.normalized();
+        for(int j=0;j<3;++j)
+        {
+            gradient(id0*3+j)+=g01(j);
+            gradient(id1*3+j)-=g01(j);
+        }
+
+        scalar len_inv=1.0/v01.norm();
+        vijk=identity+el(i)*len_inv*(v01*v01.transpose()*len_inv*len_inv-identity);
+        //std::cout<<i<<std::endl;
+        SelfAdjointEigenSolver<MatrixX3s> es;
+        es.compute(vijk);
+        U=es.eigenvectors();
+        singmat=es.eigenvalues().asDiagonal();
+        //std::cout<<singmat(0,0)<<" "<<singmat(1,1)<<" "<<singmat(2,2)<<std::endl;
+        for(int j=0;j<3;++j)
+        {
+            singmat(j,j)=std::max(singmat(j,j),0.0);
+        }
+        vijk=U*singmat*U.inverse();
+        /* es.compute(vijk);
+        singmat=es.eigenvalues().asDiagonal(); 
+        std::cout<<singmat(0,0)<<" "<<singmat(1,1)<<" "<<singmat(2,2)<<std::endl; */
+
+        /* scalar len_inv=1.0/v01.norm();
+        vijk=v01*v01.transpose()*len_inv*len_inv;
+        JacobiSVD<MatrixX3s> svd(vijk,ComputeFullU|ComputeFullV);
+        U=svd.matrixU();singvec=svd.singularValues();
+        std::cout<<i<<std::endl;
+        std::cout<<singvec(0)<<" "<<singvec(1)<<" "<<singvec(2)<<std::endl;
+
+        for(int j=0;j<3;++j)
+        {
+            singmat(j,j)=std::max(1.0-1/(el(i)*len_inv),singvec(j));
+        }
+        vijk=U*singmat*U.transpose();
+        vijk=identity+el(i)*len_inv*(vijk-identity);
+
+        JacobiSVD<MatrixX3s> svd0(vijk,ComputeFullU|ComputeFullV);
+        singvec=svd0.singularValues();
+        std::cout<<singvec(0)<<" "<<singvec(1)<<" "<<singvec(2)<<std::endl; */
+
+
+        for(int j=0;j<3;++j)
+        {
+            for(int k=0;k<3;++k)
+            {
+                tri.emplace_back(id0*3+j,id0*3+k,h2s*vijk(j,k));
+                tri.emplace_back(id0*3+j,id1*3+k,-h2s*vijk(j,k));
+                tri.emplace_back(id1*3+j,id0*3+k,-h2s*vijk(j,k));
+                tri.emplace_back(id1*3+j,id1*3+k,h2s*vijk(j,k));
+            }
+        }
+    }
+    //exit(0);
+#endif
+    gradient-=f;
+    gradient=m*(v-y)+h*h*gradient;
+
+    /* for(int i=0;i<3;++i)
+    {
+        tri.emplace_back(a*3+i,a*3+i,h2s);
+    } */
+    for(int i=0;i<v.size();++i)
+    {
+        tri.emplace_back(i,i,m);
+    }
+    spma hessian;
+    hessian.resize(v.size(),v.size());
+    hessian.setFromTriplets(tri.begin(),tri.end());
+    if(!hessian_solver_info)
+    {
+        hessian_solver.analyzePattern(hessian);
+        hessian_solver_info=true;
+    }
+    hessian_solver.factorize(hessian);
+    if(hessian_solver.info()!=0)
+    {
+        std::cout<<"hessian factorize failed"<<std::endl;
+        exit(0);
+    }
+    VectorXs dir=-hessian_solver.solve(gradient);
+    if(linesearch(v,dir,v_new))
+    {
+        trans_fix();
+    }
+    else
+    {
+        /* for(int i=0;i<10;++i)
+        {
+            Opt();
+        } */
     }
 }
 

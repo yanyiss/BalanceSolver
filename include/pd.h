@@ -54,6 +54,7 @@ public:
         }
 #endif
         calc_edgelist();
+        init_adj();
         predecomposition();
         d.resize(e.rows()*3);
         for(int i=0;i<in.size();++i)
@@ -124,12 +125,14 @@ public:
         std::cout<<f.sum()<<std::endl; */
     }
     void calc_edgelist();
+    void init_adj();
     void predecomposition();
     void local_step(VectorXs &pos);
     void global_step();
     void trans_fix();
     bool linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
     void newton();
+    void projected_newton();
     void LBFGS();
     void Anderson();
     void Opt();
@@ -160,6 +163,8 @@ public:
     VectorXs d;
     MatrixX2i e;
     VectorXs el;
+    std::vector<std::vector<int>> adj;
+    std::vector<std::vector<scalar>> adj_len;
     scalar balance_cof;
     scalar balance_rate=1.0;
 
@@ -202,6 +207,7 @@ PYBIND11_MODULE(pd_cpp, m) {
   .def("set_forces",&DiffSimulation::set_forces)
   .def("LBFGS",&DiffSimulation::LBFGS)
   .def("newton",&DiffSimulation::newton)
+  .def("projected_newton",&DiffSimulation::projected_newton)
   .def("Opt",&DiffSimulation::Opt)
   .def("print_balance_info",&DiffSimulation::print_balance_info)
   .def("compute_jacobi",&DiffSimulation::compute_jacobi);

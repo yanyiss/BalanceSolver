@@ -147,9 +147,9 @@ bool DiffSimulation::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
         times*=0.5;
         v_tdv=pos+times*dir;
         get_energy(v_tdv,step_energy);
-    }while(times>1.0e-8&&step_energy>current_energy);
+    }while(times>1.0e-6&&step_energy>current_energy);
     
-    if(times>1.0e-8)
+    if(times>1.0e-6)
     {
         new_pos=std::move(v_tdv);
         return true;
@@ -160,7 +160,7 @@ bool DiffSimulation::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
     }
 #else
     scalar current_rate=0;
-    print_balance_info(balance_cof);
+    //print_balance_info(balance_cof);
     current_rate=balance_rate;
 
     scalar times=2.0;
@@ -299,7 +299,7 @@ void DiffSimulation::projected_newton()
             gradient(id1*3+j)-=g01(j);
         }
     }
-    
+
     vtp tri;
     MatrixX3s vijk; vijk.resize(3,3);
     MatrixX3s identity; identity.resize(3,3); identity.setZero();
@@ -336,6 +336,7 @@ void DiffSimulation::projected_newton()
         }
         //std::cout<<U*singmat*U.transpose()<<std::endl;
         //exit(0);
+        //here we multiple 0.5 because we double-compute spring hessian
         local_hessian=0.5*h2s*U*singmat*U.transpose();
         for(int ii=0;ii<3;++ii)
         {
@@ -346,94 +347,16 @@ void DiffSimulation::projected_newton()
                 {
                     tri.emplace_back(i*3+ii,adj[i][j]*3+jj,local_hessian(ii,j*3+3+jj));
                     tri.emplace_back(adj[i][j]*3+ii,i*3+jj,local_hessian(j*3+3+ii,jj));
-                    for(int k=0;k<adj[i].size();++k)
+                    tri.emplace_back(adj[i][j]*3+ii,adj[i][j]*3+jj,local_hessian(j*3+3+ii,j*3+3+jj));
+                    /* for(int k=0;k<adj[i].size();++k)
                     {
                         tri.emplace_back(adj[i][j]*3+ii,adj[i][k]*3+jj,local_hessian(j*3+3+ii,k*3+3+jj));
-                    }
+                    } */
                 }
             }
         }
     }
-#if 0
-    //compute gradient and hessian
-    //for(int iter=0;iter<5;++iter)
-    //{
-    VectorXs gradient;
-    gradient.resize(v.size());
-    gradient.setZero();
-    vtp tri;
-    Vector3s v01;
-    MatrixX3s vijk;
-    vijk.resize(3,3);
-    MatrixX3s U;Vector3s singvec;
-    MatrixX3s singmat; singmat.resize(3,3); singmat.setZero();
-    scalar h2s=h*h*s;
-    MatrixX3s identity; identity.resize(3,3); identity.setZero();
-    for(int i=0;i<3;++i)
-    {
-        identity(i,i)=1.0;
-    }
-    for(int i=0;i<e.rows();++i)
-    {
-        int id0=e(i,0);
-        int id1=e(i,1);
-        v01<<v(id0*3)-v(id1*3),v(id0*3+1)-v(id1*3+1),v(id0*3+2)-v(id1*3+2);
-        Vector3s g01=s*(v01.norm()-el(i))*v01.normalized();
-        for(int j=0;j<3;++j)
-        {
-            gradient(id0*3+j)+=g01(j);
-            gradient(id1*3+j)-=g01(j);
-        }
 
-        scalar len_inv=1.0/v01.norm();
-        vijk=identity+el(i)*len_inv*(v01*v01.transpose()*len_inv*len_inv-identity);
-        //std::cout<<i<<std::endl;
-        SelfAdjointEigenSolver<MatrixX3s> es;
-        es.compute(vijk);
-        U=es.eigenvectors();
-        singmat=es.eigenvalues().asDiagonal();
-        //std::cout<<singmat(0,0)<<" "<<singmat(1,1)<<" "<<singmat(2,2)<<std::endl;
-        for(int j=0;j<3;++j)
-        {
-            singmat(j,j)=std::max(singmat(j,j),0.0);
-        }
-        vijk=U*singmat*U.inverse();
-        /* es.compute(vijk);
-        singmat=es.eigenvalues().asDiagonal(); 
-        std::cout<<singmat(0,0)<<" "<<singmat(1,1)<<" "<<singmat(2,2)<<std::endl; */
-
-        /* scalar len_inv=1.0/v01.norm();
-        vijk=v01*v01.transpose()*len_inv*len_inv;
-        JacobiSVD<MatrixX3s> svd(vijk,ComputeFullU|ComputeFullV);
-        U=svd.matrixU();singvec=svd.singularValues();
-        std::cout<<i<<std::endl;
-        std::cout<<singvec(0)<<" "<<singvec(1)<<" "<<singvec(2)<<std::endl;
-
-        for(int j=0;j<3;++j)
-        {
-            singmat(j,j)=std::max(1.0-1/(el(i)*len_inv),singvec(j));
-        }
-        vijk=U*singmat*U.transpose();
-        vijk=identity+el(i)*len_inv*(vijk-identity);
-
-        JacobiSVD<MatrixX3s> svd0(vijk,ComputeFullU|ComputeFullV);
-        singvec=svd0.singularValues();
-        std::cout<<singvec(0)<<" "<<singvec(1)<<" "<<singvec(2)<<std::endl; */
-
-
-        for(int j=0;j<3;++j)
-        {
-            for(int k=0;k<3;++k)
-            {
-                tri.emplace_back(id0*3+j,id0*3+k,h2s*vijk(j,k));
-                tri.emplace_back(id0*3+j,id1*3+k,-h2s*vijk(j,k));
-                tri.emplace_back(id1*3+j,id0*3+k,-h2s*vijk(j,k));
-                tri.emplace_back(id1*3+j,id1*3+k,h2s*vijk(j,k));
-            }
-        }
-    }
-    //exit(0);
-#endif
     gradient-=f;
     gradient=m*(v-y)+h*h*gradient;
 
@@ -466,10 +389,10 @@ void DiffSimulation::projected_newton()
     }
     else
     {
-        /* for(int i=0;i<10;++i)
+        for(int i=0;i<10;++i)
         {
             Opt();
-        } */
+        }
     }
 }
 
@@ -796,6 +719,7 @@ void DiffSimulation::compute_jacobi()
         delta.resize(v.size(),in.size()*3-3);
         delta.setZero();
         scalar s_inv=1.0/s;
+#if 0
         for(int i=0;i<in.size()-1;++i)
         {
             for(int j=0;j<3;++j)
@@ -804,6 +728,7 @@ void DiffSimulation::compute_jacobi()
                 delta(in(in.size()-1)*3+j,i*3+j)=-s_inv;
             }
         }
+#else
         /* for(int i=0;i<3;++i)
         {
             delta(in(0)*3+i,0*3+i)=s_inv;
@@ -813,7 +738,17 @@ void DiffSimulation::compute_jacobi()
                 delta(in(j)*3+i,j*3+i)=s_inv;
             }
             delta(in(in.size()-2)*3+i,(in.size()-2)*3+i)=-s_inv;
+            
         } */
+        for(int i=0;i<in.size()-1;++i)
+        {
+            for(int j=0;j<3;++j)
+            {
+                delta(in(i)*3+j,i*3+j)=s_inv;
+                delta(in(i+1)*3+j,i*3+j)=-s_inv;
+            }
+        }
+#endif
 #else
         delta.resize(v.size(),in.size()*3);
         delta.setZero();

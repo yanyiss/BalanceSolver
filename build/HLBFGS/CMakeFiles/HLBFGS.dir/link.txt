@@ -1,1 +1,0 @@
-/usr/bin/c++ -fPIC -O3 -DNDEBUG -shared -Wl,-soname,libHLBFGS.so -o libHLBFGS.so CMakeFiles/HLBFGS.dir/HLBFGS.cpp.o CMakeFiles/HLBFGS.dir/HLBFGS_BLAS.cpp.o CMakeFiles/HLBFGS.dir/ICFS.cpp.o CMakeFiles/HLBFGS.dir/LineSearch.cpp.o CMakeFiles/HLBFGS.dir/Lite_Sparse_Matrix.cpp.o 

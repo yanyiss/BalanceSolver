@@ -3,7 +3,9 @@
 #include <Eigen/Dense>
 #include <pybind11/eigen.h>
 #include <Eigen/SparseCholesky>
+//#include <Eigen/IterativeLinearSolvers>
 #include <list>
+#include <ctime>
 using namespace std;
 namespace py=pybind11;
 using namespace Eigen;
@@ -26,6 +28,10 @@ typedef Vector3d Vector3s;
 typedef MatrixXd MatrixXs;
 //typedef Matirx3d Matrix3s;
 #endif
+
+
+typedef SparseMatrix<scalar> spma;
+typedef std::vector<Triplet<scalar>> vtp;
 
 
 class balance_solver
@@ -68,6 +74,8 @@ public:
             }
         }
     }
+    void set_balance_parameter(int compute_balance_times_,scalar balance_threshold_,scalar newton_rate_,int anderson_length_,
+                               int pd_itertimes_,int newton_itertimes_);
     void set_compute_balance_parameter(int compute_balance_times_,scalar balance_threshold_,scalar newton_rate_)
     {
         compute_balance_times=compute_balance_times_;
@@ -82,7 +90,7 @@ public:
     void Anderson();
     void pd();
     void newton();
-    bool compute_balance();
+    void compute_balance();
     void trans_fix();
     bool linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
     void balance_state(VectorXs &force_on_vertex);
@@ -97,7 +105,9 @@ public:
     scalar m;
     scalar energy;
     int a;
+    
 
+    clock_t runtime[6];
     VectorXs v;
     VectorXs v_new;
     VectorXs v_aa;
@@ -115,17 +125,16 @@ public:
     scalar balance_result;
 
     std::list<VectorXs> v_list;
-    int max_num=7;
+    long unsigned int anderson_length=7;
+    int pd_times=10;
 
-    typedef SparseMatrix<scalar> spma;
-    typedef std::vector<Triplet<scalar>> vtp;
     
     //pd
     SimplicialLDLT<spma> solver;
     spma Mt2L;
     spma J;
     //newton
-    SimplicialLDLT<spma> hessian_solver;
+    SimplicialLDLT<spma,Eigen::Upper> hessian_solver;
     bool hessian_solver_info=false;
     //jacobi
     VectorXi in;
@@ -136,7 +145,7 @@ public:
 };
 
 
-PYBIND11_MODULE(pd_cpp, m) {
+PYBIND11_MODULE(balance_solver, m) {
   
   py::class_<balance_solver>(m,"balance_solver")
   .def(py::init<>())

@@ -121,6 +121,7 @@ void balance_solver::global_step()
 
 bool balance_solver::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
 {
+    clock_t start=clock();
     scalar current_energy;
     get_energy(pos,current_energy);
 
@@ -133,14 +134,16 @@ bool balance_solver::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
         v_tdv=pos+times*dir;
         get_energy(v_tdv,step_energy);
     }while(times>1.0e-6&&step_energy>current_energy);
-    
+    runtime[4]=clock()-start;
     if(times>1.0e-6)
     {
+        energy=step_energy;
         new_pos=std::move(v_tdv);
         return true;
     }
     else
     {
+        energy=current_energy;
         return false;
     }
 }
@@ -161,6 +164,7 @@ void balance_solver::trans_fix()
 
 void balance_solver::newton()
 {
+    clock_t start=clock();
     //compute gradient and hessian
     //for(int iter=0;iter<5;++iter)
     //{
@@ -209,39 +213,49 @@ void balance_solver::newton()
     {
         tri.emplace_back(i,i,m);
     }
+    runtime[0]+=clock()-start;
+    start=clock();
     spma hessian;
     hessian.resize(v.size(),v.size());
     hessian.setFromTriplets(tri.begin(),tri.end());
-    if(!hessian_solver_info)
+    /* if(!hessian_solver_info)
     {
         hessian_solver.analyzePattern(hessian);
         hessian_solver_info=true;
     }
-    hessian_solver.factorize(hessian);
+    hessian_solver.factorize(hessian); */
+    hessian_solver.compute(hessian);
     if(hessian_solver.info()!=0)
     {
         std::cout<<"hessian factorize failed"<<std::endl;
         exit(0);
     }
+    runtime[1]+=clock()-start;
+    start=clock();
+
     VectorXs dir=-hessian_solver.solve(gradient);
+    runtime[2]+=clock()-start;
+    start=clock();
     if(linesearch(v,dir,v_new))
     {
         trans_fix();
     }
     else
     {
-        for(int i=0;i<10;++i)
+        start=clock();
+        for(int i=0;i<5;++i)
         {
             pd();
         }
+        runtime[5]+=clock()-start;
     }
 }
 
 void balance_solver::Anderson()
 {
-    if(v_list.size()>max_num)
+    if(v_list.size()>anderson_length)
         v_list.pop_front();
-    if(v_list.size()<max_num)
+    if(v_list.size()<anderson_length)
         return;
 
     int n=v_list.size();
@@ -284,13 +298,13 @@ void balance_solver::Anderson()
 void balance_solver::pd()
 {
     v_new=v;
-    for(int i=0;i<max_num;++i)
+    for(long unsigned int i=0;i<anderson_length;++i)
     {
         local_step(v_new);
         global_step();
     }
     get_energy(v_new,energy);
-    for(int i=0;i<10;++i)
+    for(int i=0;i<pd_times;++i)
     {
         Anderson();
         local_step(v_aa);
@@ -315,17 +329,39 @@ void balance_solver::pd()
     trans_fix();
 }
 
-bool balance_solver::compute_balance()
+void balance_solver::compute_balance()
 {
     VectorXs force_on_vertex;
     int itertimes=0;
+    for(int i=0;i<6;++i)
+    {
+        runtime[i]=0;
+    }
     do
     {
+        clock_t start=clock();
         balance_state(force_on_vertex);
-        balance_result=force_on_vertex.sum()/force_on_vertex.size();
+        runtime[3]+=clock()-start;
+        balance_result=force_on_vertex.sum()/(force_on_vertex.size()*m);
         ++itertimes;
         if(itertimes>compute_balance_times||balance_result<balance_threshold)
-            return true;
+        { 
+            std::cout<<"\nitertimes: "<<itertimes;
+            std::cout<<"\nbalance info:\n";
+            std::cout<<"energy: "<<energy<<std::endl;
+            std::cout<<"Mean Norm Rate: "<<balance_result<<std::endl;
+            std::cout<<"Max Norm Rate: "<<force_on_vertex.maxCoeff()/m<<std::endl;
+
+            clock_t sum=0;
+            for(int i=0;i<6;++i)
+            {
+                std::cout<<runtime[i]<<" ";
+                sum+=runtime[i];
+            }
+            std::cout<<runtime[1]*1.0/sum<<std::endl;
+            std::cout<<std::endl;
+            return;
+        }
         if(balance_result>newton_rate)
         {
             pd();
@@ -335,10 +371,16 @@ bool balance_solver::compute_balance()
             newton();
         }
     }while(1);
+    std::cout<<"\nitertimes: "<<itertimes;
     std::cout<<"\nbalance info:\n";
+    std::cout<<"energy: "<<energy<<std::endl;
     std::cout<<"Mean Norm: "<<balance_result<<std::endl;
-    std::cout<<"Max Norm: "<<force_on_vertex.maxCoeff()<<std::endl;
-    return __FLT32X_HAS_QUIET_NAN__;
+    std::cout<<"Max Norm: "<<force_on_vertex.maxCoeff()/m<<std::endl;
+    for(int i=0;i<4;++i)
+    {
+        std::cout<<runtime[i]<<" ";
+    }
+    std::cout<<std::endl;
 }
 
 void balance_solver::balance_state(VectorXs &force_on_vertex)
@@ -363,6 +405,7 @@ void balance_solver::balance_state(VectorXs &force_on_vertex)
         force.row(e(i,0))-=vij;
         force.row(e(i,1))+=vij;
     }
+    force_on_vertex=force.rowwise().norm();
 }
 
 void balance_solver::get_energy(VectorXs &pos,scalar &out_energy)
@@ -381,10 +424,6 @@ void balance_solver::get_energy(VectorXs &pos,scalar &out_energy)
     scalar Work=pos.transpose()*f;
     out_energy-=Work*h*h;
 }
-
-
-
-
 
 void balance_solver::compute_jacobi()
 {

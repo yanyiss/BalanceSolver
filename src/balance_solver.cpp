@@ -5,6 +5,40 @@
 
 void balance_solver::calc_edgelist()
 {
+#if 0
+    std::vector<std::vector<std::pair<int,int>>> triangle_list;
+    triangle_list.resize(v.size()/3);
+    for(int i=0;i<t.rows();++i)
+    {
+        for(int j=0;j<3;++j)
+        {
+            triangle_list[t(i,j)].emplace_back(t(i,(j+1)%3),t(i,(j+2)%3));
+        }
+    }
+    for(int i=0;i<triangle_list.size();++i)
+    {
+        for(int j=0;j<triangle_list[i].size();++j)
+        {
+            int i1=triangle_list[i][j].first;
+            int i2=triangle_list[i][j].second;
+            if(i<i1)
+            {
+                constraints.push_back(std::move(SpringConstraint(s,i,i1,Vector3s(v(i*3)-v(i1*3),v(i*3+1)-v(i1*3+1),v(i*3+2)-v(i1*3+2)).norm())));
+                int id=0;
+                for(;id<triangle_list[i1].size();++id)
+                {
+                    if(triangle_list[i1][id].first==i)
+                        break;
+                }
+                if(id==triangle_list[i1].size())
+                    continue;
+                int id0=triangle_list[i][j].second;
+                int id1=triangle_list[i1][id].second;
+                constraints.push_back(std::move(SpringConstraint(s*0.1,id0,id1,Vector3s(v(id0*3)-v(id1*3),v(id0*3+1)-v(id1*3+1),v(id0*3+2)-v(id1*3+2)).norm())));
+            }
+        }
+    }
+#else
     std::set<std::pair<int,int>> edgelist;
     for(int i=0;i<t.rows();++i)
     {
@@ -36,23 +70,49 @@ void balance_solver::calc_edgelist()
         el(i)=std::sqrt(el(i));
         ++i;
     }
+#endif
 }
 
-void balance_solver::init_adj()
-{
-    adj.resize(v.size()/3);
-    adj_len.resize(v.size()/3);
-    for(int i=0;i<e.rows();++i)
-    {
-        adj[e(i,0)].push_back(e(i,1));
-        adj[e(i,1)].push_back(e(i,0));
-        adj_len[e(i,0)].push_back(el(i));
-        adj_len[e(i,1)].push_back(el(i));
-    }
-}
 
 void balance_solver::predecomposition()
 {
+#if 0
+    int n=v.size();
+    vtp tri;
+    tri.reserve(n);
+    //inertia
+    for(int i=0;i<n;++i)
+    {
+        tri.emplace_back(i,i,m);
+    }
+    mass_matrix.resize(n,n);
+    mass_matrix.setFromTriplets(tri.begin(),tri.end());
+    //spring force
+    tri.clear();
+    tri.reserve(constraint.size()*12);
+    for(int i=0;i<constraints.size();++i)
+    {
+        constraints.EvaluateWeightedLaplacian(tri);
+    }
+    Mt2L.resize(n,n);
+    Mt2L.setFromTriplets(tri.begin(),tri.end());
+    solver.compute(Mt2L*h*h+mass_matrix);
+    
+    tri.clear();
+    //spring force
+    for(int i=0;i<e.rows();++i)
+    {
+        int id0=e(i,0)*3;
+        int id1=e(i,1)*3;
+        for(int j=0;j<3;++j)
+        {
+            tri.emplace_back(id0+j,i*3+j,s);
+            tri.emplace_back(id1+j,i*3+j,-s);
+        }
+    }
+    J.resize(n,e.rows()*3);
+    J.setFromTriplets(tri.begin(),tri.end());
+#else
     int n=v.size();
     vtp tri;
     tri.reserve(n+e.rows()*12);
@@ -75,11 +135,11 @@ void balance_solver::predecomposition()
             tri.emplace_back(id1+j,id0+j,-h2_s);
         }
     }
+    spma Mt2L;
     Mt2L.resize(n,n);
     Mt2L.setFromTriplets(tri.begin(),tri.end());
     solver.compute(Mt2L);
     
-
     tri.clear();
     //spring force
     for(int i=0;i<e.rows();++i)
@@ -94,6 +154,7 @@ void balance_solver::predecomposition()
     }
     J.resize(n,e.rows()*3);
     J.setFromTriplets(tri.begin(),tri.end());
+#endif
 }
 
 void balance_solver::local_step(VectorXs &pos)
@@ -119,7 +180,7 @@ void balance_solver::global_step()
     v_new=solver.solve(m*y+h*h*(J*d+f));
 }
 
-bool balance_solver::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
+bool balance_solver::newton_linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
 {
     clock_t start=clock();
     scalar current_energy;
@@ -133,6 +194,34 @@ bool balance_solver::linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
         times*=0.5;
         v_tdv=pos+times*dir;
         get_energy(v_tdv,step_energy);
+    }while(times>1.0e-6&&step_energy>current_energy);
+    runtime[4]=clock()-start;
+    if(times>1.0e-6)
+    {
+        energy=step_energy;
+        new_pos=std::move(v_tdv);
+        return true;
+    }
+    else
+    {
+        energy=current_energy;
+        return false;
+    }
+}
+bool balance_solver::newton_raphson_linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos)
+{
+    clock_t start=clock();
+    scalar current_energy;
+    get_energy(pos,current_energy,false);
+
+    scalar times=2.0;
+    VectorXs v_tdv;
+    scalar step_energy;
+    do
+    {
+        times*=0.5;
+        v_tdv=pos+times*dir;
+        get_energy(v_tdv,step_energy,false);
     }while(times>1.0e-6&&step_energy>current_energy);
     runtime[4]=clock()-start;
     if(times>1.0e-6)
@@ -218,31 +307,38 @@ void balance_solver::newton()
     spma hessian;
     hessian.resize(v.size(),v.size());
     hessian.setFromTriplets(tri.begin(),tri.end());
-    /* if(!hessian_solver_info)
+    if(!newton_solver_info)
     {
-        hessian_solver.analyzePattern(hessian);
-        hessian_solver_info=true;
+        newton_solver.analyzePattern(hessian);
+        newton_solver_info=true;
     }
-    hessian_solver.factorize(hessian); */
-    hessian_solver.compute(hessian);
-    if(hessian_solver.info()!=0)
+    newton_solver.factorize(hessian);
+    //hessian_solver.compute(hessian);
+    if(newton_solver.info()!=0)
     {
-        std::cout<<"hessian factorize failed"<<std::endl;
-        exit(0);
+        std::cout<<"newton hessian factorize failed"<<std::endl;
+        for(int i=0;i<5;++i)
+        {
+            pd();
+        }
+        return;
     }
     runtime[1]+=clock()-start;
     start=clock();
 
-    VectorXs dir=-hessian_solver.solve(gradient);
+    VectorXs dir=-newton_solver.solve(gradient);
     runtime[2]+=clock()-start;
     start=clock();
-    if(linesearch(v,dir,v_new))
+    if(newton_linesearch(v,dir,v_new))
     {
+        ++method_times[1];
         trans_fix();
     }
     else
     {
+        ++method_times[0];
         start=clock();
+        std::cout<<"from pd"<<std::endl;
         for(int i=0;i<5;++i)
         {
             pd();
@@ -329,6 +425,88 @@ void balance_solver::pd()
     trans_fix();
 }
 
+void balance_solver::newton_raphson()
+{
+    VectorXs gradient;
+    gradient.resize(v.size());
+    gradient.setZero();
+    vtp tri;
+    Vector3s v01;
+    MatrixX3s vijk;
+    vijk.resize(3,3);
+    for(int i=0;i<e.rows();++i)
+    {
+        int id0=e(i,0);
+        int id1=e(i,1);
+        v01<<v(id0*3)-v(id1*3),v(id0*3+1)-v(id1*3+1),v(id0*3+2)-v(id1*3+2);
+        Vector3s g01=s*(v01.norm()-el(i))*v01.normalized();
+        for(int j=0;j<3;++j)
+        {
+            gradient(id0*3+j)+=g01(j);
+            gradient(id1*3+j)-=g01(j);
+        }
+
+        scalar len_inv=1.0/v01.norm();
+        scalar len_inv3=el(i)*len_inv*len_inv*len_inv;
+        len_inv*=el(i);
+        vijk<<1.0-len_inv+v01(0)*v01(0)*len_inv3,             v01(0)*v01(1)*len_inv3,             v01(0)*v01(2)*len_inv3,
+                          v01(1)*v01(0)*len_inv3, 1.0-len_inv+v01(1)*v01(1)*len_inv3,             v01(1)*v01(2)*len_inv3,
+                          v01(2)*v01(0)*len_inv3,             v01(2)*v01(1)*len_inv3, 1.0-len_inv+v01(2)*v01(2)*len_inv3;
+        for(int j=0;j<3;++j)
+        {
+            for(int k=0;k<3;++k)
+            {
+                tri.emplace_back(id0*3+j,id0*3+k,s*vijk(j,k));
+                tri.emplace_back(id0*3+j,id1*3+k,-s*vijk(j,k));
+                tri.emplace_back(id1*3+j,id0*3+k,-s*vijk(j,k));
+                tri.emplace_back(id1*3+j,id1*3+k,s*vijk(j,k));
+            }
+        }
+    }
+
+    gradient-=f;
+
+    spma hessian;
+    hessian.resize(v.size(),v.size());
+    hessian.setFromTriplets(tri.begin(),tri.end());
+    if(!newton_raphson_solver_info)
+    {
+        newton_raphson_solver.analyzePattern(hessian);
+        newton_raphson_solver_info=true;
+    }
+    newton_raphson_solver.factorize(hessian);
+    //hessian_solver.compute(hessian);
+    if(newton_raphson_solver.info()!=0)
+    {
+        std::cout<<"newton raphson hessian factorize failed"<<std::endl;
+        for(int i=0;i<5;++i)
+        {
+            pd();
+        }
+        return;
+        //exit(0);
+    }
+
+    VectorXs dir=-newton_raphson_solver.solve(gradient);
+
+
+    if(newton_raphson_linesearch(v,dir,v_new))
+    {
+        ++method_times[2];
+        trans_fix();
+    }
+    else
+    {
+        ++method_times[1];
+        newton();
+        /* std::cout<<"to pd"<<std::endl;
+        for(int i=0;i<5;++i)
+        {
+            pd();
+        } */
+    }
+}
+
 void balance_solver::compute_balance()
 {
     VectorXs force_on_vertex;
@@ -337,10 +515,14 @@ void balance_solver::compute_balance()
     {
         runtime[i]=0;
     }
+    for(int i=0;i<3;++i)
+    {
+        method_times[i]=0;
+    }
     do
     {
         clock_t start=clock();
-        balance_state(force_on_vertex);
+        balance_state(v_new,force_on_vertex);
         runtime[3]+=clock()-start;
         balance_result=force_on_vertex.sum()/(force_on_vertex.size()*m);
         ++itertimes;
@@ -359,16 +541,18 @@ void balance_solver::compute_balance()
                 sum+=runtime[i];
             }
             std::cout<<runtime[1]*1.0/sum<<std::endl;
+            std::cout<<"sum: "<<sum<<std::endl;
             std::cout<<std::endl;
+            std::cout<<method_times[0]<<" "<<method_times[1]<<" "<<method_times[2]<<std::endl;
             return;
         }
         if(balance_result>newton_rate)
         {
-            pd();
+            newton();
         }
         else
         {
-            newton();
+            newton_raphson();
         }
     }while(1);
     std::cout<<"\nitertimes: "<<itertimes;
@@ -376,14 +560,19 @@ void balance_solver::compute_balance()
     std::cout<<"energy: "<<energy<<std::endl;
     std::cout<<"Mean Norm: "<<balance_result<<std::endl;
     std::cout<<"Max Norm: "<<force_on_vertex.maxCoeff()/m<<std::endl;
-    for(int i=0;i<4;++i)
-    {
-        std::cout<<runtime[i]<<" ";
-    }
+    clock_t sum=0;
+            for(int i=0;i<6;++i)
+            {
+                std::cout<<runtime[i]<<" ";
+                sum+=runtime[i];
+            }
+    std::cout<<runtime[1]*1.0/sum<<std::endl;
+    std::cout<<"sum: "<<sum<<std::endl;
     std::cout<<std::endl;
+    std::cout<<method_times[0]<<" "<<method_times[1]<<" "<<method_times[2]<<std::endl;
 }
 
-void balance_solver::balance_state(VectorXs &force_on_vertex)
+void balance_solver::balance_state(VectorXs &pos, VectorXs &force_on_vertex)
 {
     MatrixXs force;
     force.resize(f.size()/3,3);
@@ -408,9 +597,16 @@ void balance_solver::balance_state(VectorXs &force_on_vertex)
     force_on_vertex=force.rowwise().norm();
 }
 
-void balance_solver::get_energy(VectorXs &pos,scalar &out_energy)
+void balance_solver::get_energy(VectorXs &pos,scalar &out_energy, bool with_mass_matrix)
 {
-    out_energy=(pos-y).squaredNorm()*m*0.5;
+    if (with_mass_matrix)
+    {
+        out_energy=(pos-y).squaredNorm()*m*0.5;
+    }
+    else
+    {
+        out_energy=0;
+    }
     scalar h2s=h*h*s;
     Vector3s vij;
     for(int i=0;i<e.rows();++i)

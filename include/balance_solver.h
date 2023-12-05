@@ -3,6 +3,7 @@
 #include <Eigen/Dense>
 #include <pybind11/eigen.h>
 #include <Eigen/SparseCholesky>
+#include <Eigen/SparseLU>
 //#include <Eigen/IterativeLinearSolvers>
 #include <list>
 #include <ctime>
@@ -19,19 +20,111 @@ typedef MatrixX3f MatrixX3s;
 typedef VectorXf VectorXs;
 typedef Vector3f Vector3s;
 typedef MatrixXf MatrixXs;
-//typedef Matrix3f Matrix3s;
+typedef Matrix3f Matrix3s;
 #else
 typedef double scalar;
 typedef MatrixX3d MatrixX3s;
 typedef VectorXd VectorXs;
 typedef Vector3d Vector3s;
 typedef MatrixXd MatrixXs;
-//typedef Matirx3d Matrix3s;
+typedef Matrix3d Matrix3s;
 #endif
 
-
+//typedef Matrix<scalar, 3, 3, 0, 3 ,3> Matrix3s;
 typedef SparseMatrix<scalar> spma;
 typedef std::vector<Triplet<scalar>> vtp;
+
+class Constraint
+{
+public:
+    Constraint(scalar stiffness):s(stiffness){}
+    virtual ~Constraint(){}
+
+    virtual void  EvaluateEnergy(VectorXs& x, scalar &energy) {}
+    virtual void  EvaluateGradient(VectorXs& x, VectorXs& gradient) {}
+    virtual void  EvaluateHessian(VectorXs& x, vtp& hessian_triplets) {}
+    virtual void  EvaluateWeightedLaplacian(vtp& laplacian_triplets) {}
+
+    // for pd
+    virtual void EvaluateDVector(unsigned int index, VectorXs& x, VectorXs& d){}
+    virtual void EvaluateJMatrix(unsigned int index, vtp& J_triplets) {}
+
+    scalar s;
+};
+
+class SpringConstraint : public Constraint
+{
+public:
+    SpringConstraint(scalar stiffness);
+    SpringConstraint(scalar stiffness, unsigned int p1, unsigned int p2, scalar length);
+    ~SpringConstraint();
+
+    void  EvaluatePotentialEnergy(VectorXs& x, scalar &energy)
+    {
+        Vector3s xij(x(m_p1*3)-x(m_p2*3),x(m_p1*3+1)-x(m_p2*3+1),x(m_p1*3+2)-x(m_p2*3+2));
+        scalar ld=xij.norm()-m_rest_length;
+        energy=0.5*s*ld*ld;
+    }
+    void  EvaluateGradient(VectorXs& x, VectorXs& gradient)
+    {
+        Vector3s xij(x(m_p1*3)-x(m_p2*3),x(m_p1*3+1)-x(m_p2*3+1),x(m_p1*3+2)-x(m_p2*3+2));
+        scalar norm=xij.norm();
+        xij=s*(norm-m_rest_length)*xij/norm;
+        for(int i=0;i<3;++i)
+        {
+            gradient(m_p1*3+i)+=xij(i);
+            gradient(m_p2*3+i)-=xij(i);
+        }
+    }
+    void  EvaluateHessian(VectorXs& x, vtp& hessian_triplets)
+    {
+        Vector3s xij(x(m_p1*3)-x(m_p2*3),x(m_p1*3+1)-x(m_p2*3+1),x(m_p1*3+2)-x(m_p2*3+2));
+        scalar norm=xij.norm();
+        Matrix3s mat3=s*(Matrix3s::Identity()-m_rest_length/norm*(Matrix3s::Identity()-xij*xij.transpose()/(norm*norm)));
+        for(int i=0;i<3;++i)
+        {
+            for(int j=0;j<3;++j)
+            {
+                scalar value=mat3(i,j);
+                hessian_triplets.emplace_back(m_p1*3+i,m_p1*3+j,value);
+                hessian_triplets.emplace_back(m_p1*3+i,m_p2*3+j,-value);
+                hessian_triplets.emplace_back(m_p2*3+i,m_p1*3+j,-value);
+                hessian_triplets.emplace_back(m_p2*3+i,m_p2*3+j,value);
+            }
+        }
+    }
+    void  EvaluateWeightedLaplacian(vtp& laplacian_triplets)
+    {
+        for(int i=0;i<3;++i)
+        {
+            laplacian_triplets.emplace_back(m_p1*3+i,m_p1*3+i,s);
+            laplacian_triplets.emplace_back(m_p1*3+i,m_p2*3+i,-s);
+            laplacian_triplets.emplace_back(m_p2*3+i,m_p1*3+i,-s);
+            laplacian_triplets.emplace_back(m_p2*3+i,m_p2*3+i,s);
+        }
+    }
+    void EvaluateDVector(unsigned int index, VectorXs& x, VectorXs& d)
+    {
+        Vector3s xij(x(m_p1*3)-x(m_p2*3),x(m_p1*3+1)-x(m_p2*3+1),x(m_p1*3+2)-x(m_p2*3+2));
+        xij.normalized();
+        for(int i=0;i<3;++i)
+        {
+            d(index*3+i)=xij(i)*m_rest_length;
+        }
+    }
+    void EvaluateJMatrix(unsigned int index, vtp& J_triplets)
+    {
+        for(int i=0;i<3;++i)
+        {
+            J_triplets.emplace_back(m_p1*3+i,index*3+i,s);
+            J_triplets.emplace_back(m_p2*3+i,index*3+i,-s);
+        }
+    }
+
+protected:
+    unsigned int m_p1, m_p2;
+    scalar m_rest_length;
+};
 
 
 class balance_solver
@@ -47,7 +140,6 @@ public:
         v_new=v;y=v;
         s=s_stiffness;h=h_interval;m=m_mass*3.0/v.size();a=a_attach;
         calc_edgelist();
-        init_adj();
         predecomposition();
         d.resize(e.rows()*3);
         for(int i=0;i<in.size();++i)
@@ -83,21 +175,22 @@ public:
         newton_rate=newton_rate_;
     }
     void calc_edgelist();
-    void init_adj();
     void predecomposition();
     void local_step(VectorXs &pos);
     void global_step();
     void Anderson();
     void pd();
     void newton();
+    void newton_raphson();
     void compute_balance();
     void trans_fix();
-    bool linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
-    void balance_state(VectorXs &force_on_vertex);
-    void get_energy(VectorXs &pos, scalar &out_energy);
+    bool newton_linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
+    bool newton_raphson_linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
+    void balance_state(VectorXs &pos, VectorXs &force_on_vertex);
+    void get_energy(VectorXs &pos, scalar &out_energy, bool with_mass_matrix=true);
     void compute_jacobi();
     
-
+    int method_times[3];
 
     MatrixX3i t;
     scalar s;
@@ -106,7 +199,7 @@ public:
     scalar energy;
     int a;
     
-
+    std::vector<Constraint> constraints;
     clock_t runtime[6];
     VectorXs v;
     VectorXs v_new;
@@ -116,8 +209,6 @@ public:
     VectorXs d;
     MatrixX2i e;
     VectorXs el;
-    std::vector<std::vector<int>> adj;
-    std::vector<std::vector<scalar>> adj_len;
 
     scalar compute_balance_times;
     scalar balance_threshold;
@@ -131,11 +222,14 @@ public:
     
     //pd
     SimplicialLDLT<spma> solver;
-    spma Mt2L;
+    spma mass_matrix;
     spma J;
     //newton
-    SimplicialLDLT<spma,Eigen::Upper> hessian_solver;
-    bool hessian_solver_info=false;
+    SimplicialLDLT<spma> newton_solver;
+    bool newton_solver_info=false;
+    //newton_raphson
+    SparseLU<spma> newton_raphson_solver;
+    bool newton_raphson_solver_info=false;
     //jacobi
     VectorXi in;
     MatrixXs jacobi;

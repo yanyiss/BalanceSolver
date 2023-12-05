@@ -139,6 +139,10 @@ public:
         t=t_triangles;v=v_vertices;in=in_index;
         v_new=v;y=v;
         s=s_stiffness;h=h_interval;m=m_mass*3.0/v.size();a=a_attach;
+        for(int i=0;i<3;++i)
+        {
+            a_pos(i)=v(a*3+i);
+        }
         calc_edgelist();
         predecomposition();
         d.resize(e.rows()*3);
@@ -187,7 +191,7 @@ public:
     bool newton_linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
     bool newton_raphson_linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
     void balance_state(VectorXs &pos, VectorXs &force_on_vertex);
-    void get_energy(VectorXs &pos, scalar &out_energy, bool with_mass_matrix=true);
+    void get_energy(VectorXs &pos, scalar &out_energy, bool with_mass_matrix=true, bool with_fixed_energy=false);
     void compute_jacobi();
     
     int method_times[3];
@@ -198,6 +202,7 @@ public:
     scalar m;
     scalar energy;
     int a;
+    Vector3s a_pos;
     
     std::vector<Constraint> constraints;
     clock_t runtime[6];

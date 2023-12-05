@@ -239,7 +239,8 @@ bool balance_solver::newton_raphson_linesearch(VectorXs &pos, VectorXs &dir, Vec
 
 void balance_solver::trans_fix()
 {
-    Vector3s trans(v(a*3)-v_new(a*3),v(a*3+1)-v_new(a*3+1),v(a*3+2)-v_new(a*3+2));
+    //Vector3s trans(v(a*3)-v_new(a*3),v(a*3+1)-v_new(a*3+1),v(a*3+2)-v_new(a*3+2));
+    Vector3s trans(a_pos(0)-v_new(a*3),a_pos(1)-v_new(a*3+1),a_pos(2)-v_new(a*3+2));
     for(int i=0;i<v.size()/3;++i)
     {
         for(int j=0;j<3;++j)
@@ -294,7 +295,14 @@ void balance_solver::newton()
             }
         }
     }
-
+    //fixed point
+#if 1
+    for(int i=0;i<3;++i)
+    {
+        gradient(a*3+i)+=s*(v(a*3+i)-a_pos(i));
+        tri.emplace_back(a*3+i,a*3+i,h2s);
+    }
+#endif
     gradient-=f;
     gradient=m*(v-y)+h*h*gradient;
 
@@ -463,6 +471,14 @@ void balance_solver::newton_raphson()
             }
         }
     }
+    //fixed point
+#if 1
+    for(int i=0;i<3;++i)
+    {
+        gradient(a*3+i)+=s*(v(a*3+i)-a_pos(i));
+        tri.emplace_back(a*3+i,a*3+i,s);
+    }
+#endif
 
     gradient-=f;
 
@@ -597,7 +613,7 @@ void balance_solver::balance_state(VectorXs &pos, VectorXs &force_on_vertex)
     force_on_vertex=force.rowwise().norm();
 }
 
-void balance_solver::get_energy(VectorXs &pos,scalar &out_energy, bool with_mass_matrix)
+void balance_solver::get_energy(VectorXs &pos,scalar &out_energy, bool with_mass_matrix, bool with_fixed_energy)
 {
     if (with_mass_matrix)
     {
@@ -608,6 +624,11 @@ void balance_solver::get_energy(VectorXs &pos,scalar &out_energy, bool with_mass
         out_energy=0;
     }
     scalar h2s=h*h*s;
+    if (with_fixed_energy)
+    {
+        Vector3s fixed_trans(pos(a*3)-a_pos(0),pos(a*3+1)-a_pos(1),pos(a*3+2)-a_pos(2));
+        out_energy+=s*fixed_trans.squaredNorm();
+    }
     Vector3s vij;
     for(int i=0;i<e.rows();++i)
     {

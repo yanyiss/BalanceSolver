@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD 11)
 # 设置头文件&相关库
 include_directories(include)
 include_directories(eigen3) 
+#find_package(Torch REQUIRED)
 
 #add_subdirectory(HLBFGS)
 add_subdirectory(pybind11)

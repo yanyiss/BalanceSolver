@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <omp.h>
 #include <ctime>
+#include <fstream>
 
 void balance_solver::calc_edgelist()
 {
@@ -526,6 +527,7 @@ void balance_solver::newton_raphson()
 
 void balance_solver::compute_balance()
 {
+    compute_balance_result();
     VectorXs force_on_vertex;
     int itertimes=0;
     for(int i=0;i<6;++i)
@@ -541,7 +543,8 @@ void balance_solver::compute_balance()
         clock_t start=clock();
         balance_state(v_new,force_on_vertex);
         runtime[3]+=clock()-start;
-        balance_result=force_on_vertex.sum()/(force_on_vertex.size()*m);
+        balance_result=force_on_vertex.sum();///(force_on_vertex.size()*m);
+        //std::cout<<"ff"<<balance_result<<std::endl;
         ++itertimes;
         if(itertimes>compute_balance_times||balance_result<balance_threshold)
         { 
@@ -565,7 +568,7 @@ void balance_solver::compute_balance()
         }
         if(balance_result>newton_rate)
         {
-            newton();
+            pd();
         }
         else
         {
@@ -611,7 +614,23 @@ void balance_solver::balance_state(VectorXs &pos, VectorXs &force_on_vertex)
         force.row(e(i,0))-=vij;
         force.row(e(i,1))+=vij;
     }
-    force_on_vertex=force.rowwise().norm();
+    force_on_vertex=force.rowwise().squaredNorm();
+}
+
+scalar balance_solver::compute_balance_result()
+{
+    VectorXs force_on_vertex;
+    balance_state(v_new,force_on_vertex);
+    /* std::cout<<"\nc++\n";
+    for(int i=0;i<v.size()/3;++i)
+    {
+        std::cout<<v[i*3]<<" "<<v[i*3+1]<<" "<<v[i*3+2]<<std::endl;
+    }
+    for(int i=0;i<v.size()/3;++i)
+    {
+        std::cout<<force_on_vertex[i*3]<<" "<<force_on_vertex[i*3+1]<<" "<<force_on_vertex[i*3+2]<<std::endl;
+    } */
+    return force_on_vertex.sum();
 }
 
 void balance_solver::get_energy(VectorXs &pos,scalar &out_energy, bool with_mass_matrix, bool with_fixed_energy)
@@ -706,12 +725,19 @@ void balance_solver::compute_jacobi()
         }
 #endif
 
+    clock_t solve_start=clock();
         v_solver.analyzePattern(v_mat);
+    std::cout<<"analyze time:"<<clock()-solve_start<<std::endl;
         v_solver_info=true;
     }
+    clock_t solve_start=clock();
     v_solver.factorize(v_mat);
+    std::cout<<v_solver.info()<<std::endl;
+    std::cout<<"factorize time:"<<clock()-solve_start<<std::endl;
     jacobi.resize(v.size()*3,in.size()*3-3);
+    solve_start=clock();
     jacobi=v_solver.solve(delta);
+    std::cout<<"solve time:"<<clock()-solve_start<<std::endl;
     /* jacobi=v_solver.solve(delta);
     return; */
     /* omp_set_num_threads(2);
@@ -721,4 +747,87 @@ void balance_solver::compute_jacobi()
         jacobi.col(i)=v_solver.solve(delta.col(i));
     } */
     
+}
+
+void balance_solver::compute_csr()
+{
+    jacobirow.resize(e.rows()*36+3);
+    jacobicol.resize(e.rows()*36+3);
+    jacobival.resize(e.rows()*36+3);
+    MatrixX3s vjk;
+    vjk.resize(3,3);
+    auto assemble_tri=[&](int id,int r,int c,scalar v)
+    {
+        jacobirow(id)=r;jacobicol(id)=c;jacobival(id)=v;
+    };
+    int count=0;
+    for(int i=0;i<e.rows();++i)
+    {
+        int id0=e(i,0);
+        int id1=e(i,1);
+        //std::cout<<i<<" "<<id0<<" "<<id1<<std::endl;
+        Vector3s v01(v(id1*3)-v(id0*3),v(id1*3+1)-v(id0*3+1),v(id1*3+2)-v(id0*3+2));
+        scalar len_inv=1.0/v01.norm();
+        scalar len_inv3=el(i)*len_inv*len_inv*len_inv;
+        len_inv*=el(i);
+        vjk<<1.0-len_inv+v01(0)*v01(0)*len_inv3,             v01(0)*v01(1)*len_inv3,             v01(0)*v01(2)*len_inv3,
+                         v01(1)*v01(0)*len_inv3, 1.0-len_inv+v01(1)*v01(1)*len_inv3,             v01(1)*v01(2)*len_inv3,
+                         v01(2)*v01(0)*len_inv3,             v01(2)*v01(1)*len_inv3, 1.0-len_inv+v01(2)*v01(2)*len_inv3;
+        auto zer=[&](int i0,int i1){if(i0==a||i1==a) return 0.0;else return 1.0;};
+        for(int j=0;j<3;++j)
+        {
+            for(int k=0;k<3;++k)
+            {
+                assemble_tri(count++,id0*3+j,id0*3+k,vjk(j,k)*zer(id0,id0));
+                assemble_tri(count++,id0*3+j,id1*3+k,-vjk(j,k)*zer(id0,id1));
+                assemble_tri(count++,id1*3+j,id0*3+k,-vjk(j,k)*zer(id1,id0));
+                assemble_tri(count++,id1*3+j,id1*3+k,vjk(j,k)*zer(id1,id1));
+            }
+        }
+    }
+    for(int i=0;i<3;++i)
+    {
+        assemble_tri(count++,a*3+i,a*3+i,1.0);
+    }
+    /* std::cout<<"fpojoie";
+    for(int i=0;i<jacobirow.size();++i)
+    {
+        std::cout<<jacobirow(i)<<" "<<jacobicol(i)<<" "<<jacobival(i)<<std::endl;
+        std::cout<<std::endl;
+    } */
+    /* std::ofstream fin;
+    fin.open("/home/yanyisheshou/Program/TarpDesign/algorithm/data/denseInfo/row.txt",ios::out);
+    for(int i=0;i<jacobirow.size();++i)
+    {
+        fin <<jacobirow(i)<<std::endl;
+    }
+    fin.close();
+    fin.open("/home/yanyisheshou/Program/TarpDesign/algorithm/data/denseInfo/col.txt",ios::out);
+    for(int i=0;i<jacobirow.size();++i)
+    {
+        fin <<jacobicol(i)<<std::endl;
+    }
+    fin.close();
+    fin.open("/home/yanyisheshou/Program/TarpDesign/algorithm/data/denseInfo/value.txt",ios::out);
+    for(int i=0;i<jacobirow.size();++i)
+    {
+        fin <<jacobival(i)<<std::endl;
+    }
+    fin.close();
+    exit(0); */
+}
+
+void balance_solver::compute_csr_right()
+{
+    jacobiright.resize(v.size(),in.size()*3-3);
+    jacobiright.setZero();
+    scalar s_inv=1.0/s;
+    for(int i=0;i<in.size()-1;++i)
+    {
+        for(int j=0;j<3;++j)
+        {
+            jacobiright(in(i)*3+j,i*3+j)=s_inv;
+            jacobiright(in(i+1)*3+j,i*3+j)=-s_inv;
+        }
+    }
 }

@@ -191,8 +191,11 @@ public:
     bool newton_linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
     bool newton_raphson_linesearch(VectorXs &pos, VectorXs &dir, VectorXs &new_pos);
     void balance_state(VectorXs &pos, VectorXs &force_on_vertex);
+    scalar compute_balance_result();
     void get_energy(VectorXs &pos, scalar &out_energy, bool with_mass_matrix=true, bool with_fixed_energy=false);
     void compute_jacobi();
+    void compute_csr();
+    void compute_csr_right();
     
     int method_times[3];
 
@@ -241,6 +244,10 @@ public:
     MatrixXs delta;
     SimplicialLDLT<spma> v_solver;
     bool v_solver_info=false;
+    VectorXi jacobirow;
+    VectorXi jacobicol;
+    VectorXs jacobival;
+    MatrixXs jacobiright;
 };
 
 
@@ -251,11 +258,18 @@ PYBIND11_MODULE(balance_solver, m) {
   .def_readwrite("v",&balance_solver::v)
   .def_readwrite("jacobi",&balance_solver::jacobi)
   .def_readwrite("balance_result",&balance_solver::balance_result)
+  .def_readwrite("jacobirow",&balance_solver::jacobirow)
+  .def_readwrite("jacobicol",&balance_solver::jacobicol)
+  .def_readwrite("jacobival",&balance_solver::jacobival)
+  .def_readwrite("jacobiright",&balance_solver::jacobiright)
   .def("set_info",&balance_solver::set_info)
   .def("set_forces",&balance_solver::set_forces)
   .def("set_compute_balance_parameter",&balance_solver::set_compute_balance_parameter)
   .def("compute_balance",&balance_solver::compute_balance)
-  .def("compute_jacobi",&balance_solver::compute_jacobi);
+  .def("compute_balance_result",&balance_solver::compute_balance_result)
+  .def("compute_jacobi",&balance_solver::compute_jacobi)
+  .def("compute_csr",&balance_solver::compute_csr)
+  .def("compute_csr_right",&balance_solver::compute_csr_right);
 }
 //cmake .. -DCMAKE_BUILD_TYPE=Release
 //make;rm /home/yanyisheshou/Program/TarpDesign/algorithm/balance_solver.cpython-39-x86_64-linux-gnu.so;mv balance_solver.cpython-39-x86_64-linux-gnu.so /home/yanyisheshou/Program/TarpDesign/algorithm/

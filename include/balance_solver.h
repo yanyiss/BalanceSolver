@@ -166,7 +166,8 @@ public:
         {
             for(int j=0;j<3;++j)
             {
-                f(in(i)*3+j)+=f_forces(i*3+j);
+                //f(in(i)*3+j)+=f_forces(i*3+j);
+                f(in(i)*3+j)+=f_forces(i*6+j)+f_forces(i*6+3+j);
             }
         }
     }

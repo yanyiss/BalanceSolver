@@ -819,7 +819,7 @@ void balance_solver::compute_csr()
 
 void balance_solver::compute_csr_right()
 {
-    jacobiright.resize(v.size(),in.size()*3-3);
+    /* jacobiright.resize(v.size(),in.size()*3-3);
     jacobiright.setZero();
     scalar s_inv=1.0/s;
     for(int i=0;i<in.size()-1;++i)
@@ -828,6 +828,19 @@ void balance_solver::compute_csr_right()
         {
             jacobiright(in(i)*3+j,i*3+j)=s_inv;
             jacobiright(in(i+1)*3+j,i*3+j)=-s_inv;
+        }
+    } */
+    jacobiright.resize(v.size(),in.size()*6-6);
+    jacobiright.setZero();
+    scalar s_inv=1.0/s;
+    for(int i=0;i<in.size()-1;++i)
+    {
+        for(int j=0;j<3;++j)
+        {
+            jacobiright(in(i)*3+j,i*6+j)=s_inv;
+            jacobiright(in(i)*3+j,i*6+3+j)=s_inv;
+            jacobiright(in(i+1)*3+j,i*6+j)=-s_inv;
+            jacobiright(in(i+1)*3+j,i*6+3+j)=-s_inv;
         }
     }
 }

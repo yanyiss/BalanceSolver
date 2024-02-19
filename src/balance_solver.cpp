@@ -819,7 +819,7 @@ void balance_solver::compute_csr()
 
 void balance_solver::compute_csr_right()
 {
-    /* jacobiright.resize(v.size(),in.size()*3-3);
+    jacobiright.resize(v.size(),in.size()*3-3);
     jacobiright.setZero();
     scalar s_inv=1.0/s;
     for(int i=0;i<in.size()-1;++i)
@@ -829,8 +829,8 @@ void balance_solver::compute_csr_right()
             jacobiright(in(i)*3+j,i*3+j)=s_inv;
             jacobiright(in(i+1)*3+j,i*3+j)=-s_inv;
         }
-    } */
-    jacobiright.resize(v.size(),in.size()*6-6);
+    }
+    /* jacobiright.resize(v.size(),in.size()*6-6);
     jacobiright.setZero();
     scalar s_inv=1.0/s;
     for(int i=0;i<in.size()-1;++i)
@@ -842,5 +842,53 @@ void balance_solver::compute_csr_right()
             jacobiright(in(i+1)*3+j,i*6+j)=-s_inv;
             jacobiright(in(i+1)*3+j,i*6+3+j)=-s_inv;
         }
+    } */
+}
+
+void balance_solver::cubic_sampling()
+{
+    scalar sinloc_cosdir=sin(loc_rad)*cos(dir_rad);
+    scalar cosloc_sindir=cos(loc_rad)*sin(dir_rad);
+    scalar cosloc_cosdir=cos(loc_rad)*cos(dir_rad);
+    scalar sinloc_sindir=sin(loc_rad)*sin(dir_rad);
+    scalar cosdir=cos(dir_rad);
+
+    int n=10000;
+    scalar cubic_len=0;
+    VectorXs sampling_len;sampling_len.resize(n);
+    VectorXs x;x.resize(n+1);
+    VectorXs y;y.resize(n+1);
+    x(0)=(sinloc_cosdir*cos(start_rad)-cosloc_sindir)/(cosloc_cosdir*cos(start_rad)+sinloc_sindir);
+    y(0)=cosdir*sin(start_rad)/(cosloc_cosdir*cos(start_rad)+sinloc_sindir);
+    scalar step=(end_rad-start_rad)/n;
+    for(int i=1;i<=n;++i)
+    {
+        scalar lambda=i*step+start_rad;
+        x(i)=(sinloc_cosdir*cos(lambda)-cosloc_sindir)/(cosloc_cosdir*cos(lambda)+sinloc_sindir);
+        y(i)=cosdir*sin(lambda)/(cosloc_cosdir*cos(lambda)+sinloc_sindir);
+        scalar xi=x(i)-x(i-1);
+        scalar yi=y(i)-y(i-1);
+        sampling_len(i-1)=sqrt(xi*xi+yi*yi);
+        cubic_len+=sampling_len(i-1);
     }
+
+    int count=1;
+    //step=(end_rad-start_rad)/(sampling_num-1);
+    scalar acc_len=0;
+    scalar avg_len=cubic_len/(sampling_num-1);
+    sampling_lambda.resize(sampling_num);
+    sampling_lambda(0)=start_rad;
+    for(int i=1;i<=n;++i)
+    {
+        acc_len+=sampling_len(i-1);
+        scalar t=acc_len-count*avg_len;
+        if(t>0)
+        {
+            t/=sampling_len(i-1);
+            sampling_lambda(count)=t*((i-1)*step+start_rad)+(1-t)*(i*step+start_rad);
+            //sampling_lambda(count)=compute_lambda(t*x(i-1)+(1-t)*x(i),t*y(i-1)+(1-t)*y(i));
+            ++count;
+        }
+    }
+    sampling_lambda(sampling_num-1)=end_rad;
 }

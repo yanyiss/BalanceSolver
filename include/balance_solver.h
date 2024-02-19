@@ -166,8 +166,8 @@ public:
         {
             for(int j=0;j<3;++j)
             {
-                //f(in(i)*3+j)+=f_forces(i*3+j);
-                f(in(i)*3+j)+=f_forces(i*6+j)+f_forces(i*6+3+j);
+                f(in(i)*3+j)+=f_forces(i*3+j);
+                //f(in(i)*3+j)+=f_forces(i*6+j)+f_forces(i*6+3+j);
             }
         }
     }
@@ -249,6 +249,20 @@ public:
     VectorXi jacobicol;
     VectorXs jacobival;
     MatrixXs jacobiright;
+
+#pragma region cubic sampling
+    scalar loc_rad;
+    scalar dir_rad;
+    scalar start_rad;
+    scalar end_rad;
+    int sampling_num;
+    VectorXd sampling_lambda;
+    void set_sampling_parameter(scalar loc,scalar dir,scalar start,scalar end,int num)
+    {
+        loc_rad=loc;dir_rad=dir;start_rad=start;end_rad=end;sampling_num=num;
+    }
+    void cubic_sampling();
+#pragma endregion
 };
 
 
@@ -263,6 +277,7 @@ PYBIND11_MODULE(balance_solver, m) {
   .def_readwrite("jacobicol",&balance_solver::jacobicol)
   .def_readwrite("jacobival",&balance_solver::jacobival)
   .def_readwrite("jacobiright",&balance_solver::jacobiright)
+  .def_readwrite("sampling_lambda",&balance_solver::sampling_lambda)
   .def("set_info",&balance_solver::set_info)
   .def("set_forces",&balance_solver::set_forces)
   .def("set_compute_balance_parameter",&balance_solver::set_compute_balance_parameter)
@@ -270,7 +285,9 @@ PYBIND11_MODULE(balance_solver, m) {
   .def("compute_balance_result",&balance_solver::compute_balance_result)
   .def("compute_jacobi",&balance_solver::compute_jacobi)
   .def("compute_csr",&balance_solver::compute_csr)
-  .def("compute_csr_right",&balance_solver::compute_csr_right);
+  .def("compute_csr_right",&balance_solver::compute_csr_right)
+  .def("set_sampling_parameter",&balance_solver::set_sampling_parameter)
+  .def("cubic_sampling",&balance_solver::cubic_sampling);
 }
 //cmake .. -DCMAKE_BUILD_TYPE=Release
-//make;rm /home/yanyisheshou/Program/TarpDesign/algorithm/balance_solver.cpython-39-x86_64-linux-gnu.so;mv balance_solver.cpython-39-x86_64-linux-gnu.so /home/yanyisheshou/Program/TarpDesign/algorithm/
+//make;rm /home/BA22001030/program/TarpDesign/algorithm/balance_solver.cpython-39-x86_64-linux-gnu.so;mv balance_solver.cpython-39-x86_64-linux-gnu.so /home/BA22001030/program/TarpDesign/algorithm/
